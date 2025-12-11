@@ -40,25 +40,39 @@ fi
 
 # Check if uv is installed
 if command -v uv &> /dev/null; then
+    # Create virtual environment in project root if it doesn't exist
+    cd "$PROJECT_ROOT"
+    if [ ! -d ".venv" ]; then
+        echo ">> Creating virtual environment..."
+        uv venv
+    fi
+    
+    # Get the Python interpreter from the venv
+    VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
+    
+    # Install IndexTTS into the project venv
     echo ">> Installing IndexTTS using uv..."
-    uv sync --no-dev
+    cd "$INDEXTTS_REPO_PATH"
+    uv pip install --python "$VENV_PYTHON" -e .
     echo ">> IndexTTS installed successfully with uv"
+    
+    # Install wrapper dependencies
+    echo ">> Installing wrapper dependencies..."
+    cd "$PROJECT_ROOT"
+    uv pip install --python "$VENV_PYTHON" -e .
 elif command -v pip &> /dev/null; then
     echo ">> Installing IndexTTS using pip..."
+    cd "$INDEXTTS_REPO_PATH"
     pip install -e .
     echo ">> IndexTTS installed successfully with pip"
+    
+    # Install wrapper dependencies
+    echo ">> Installing wrapper dependencies..."
+    cd "$PROJECT_ROOT"
+    pip install -e .
 else
     echo "ERROR: Neither uv nor pip is installed. Please install one of them."
     exit 1
-fi
-
-# Install wrapper dependencies
-echo ">> Installing wrapper dependencies..."
-cd "$PROJECT_ROOT"
-if command -v uv &> /dev/null; then
-    uv pip install -e .
-elif command -v pip &> /dev/null; then
-    pip install -e .
 fi
 
 echo ">> Setup complete!"

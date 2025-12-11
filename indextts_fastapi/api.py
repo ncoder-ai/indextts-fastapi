@@ -106,20 +106,60 @@ def get_voice_file(voice_identifier: str) -> Optional[str]:
     """
     # First check preset mappings
     if voice_identifier in OPENAI_VOICE_MAP:
-        return OPENAI_VOICE_MAP[voice_identifier]
+        voice_path = OPENAI_VOICE_MAP[voice_identifier]
+        # Resolve relative paths
+        if not os.path.isabs(voice_path):
+            # Try project root
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            full_path = os.path.join(project_root, voice_path)
+            if os.path.exists(full_path):
+                return full_path
+            # Try index-tts directory
+            index_tts_path = os.path.join(project_root, "index-tts", voice_path)
+            if os.path.exists(index_tts_path):
+                return index_tts_path
+            # Try current working directory
+            if os.path.exists(voice_path):
+                return os.path.abspath(voice_path)
+        elif os.path.exists(voice_path):
+            return voice_path
+        return None
     
     # Check discovered voices
     discovered = discover_voice_files()
     if voice_identifier in discovered:
-        return discovered[voice_identifier]
+        voice_path = discovered[voice_identifier]
+        if os.path.exists(voice_path):
+            return voice_path
+        # Try to resolve relative paths
+        if not os.path.isabs(voice_path):
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            full_path = os.path.join(project_root, voice_path)
+            if os.path.exists(full_path):
+                return full_path
+            index_tts_path = os.path.join(project_root, "index-tts", voice_path)
+            if os.path.exists(index_tts_path):
+                return index_tts_path
     
     # Check if it's a direct file path
     if os.path.exists(voice_identifier):
-        return voice_identifier
+        return os.path.abspath(voice_identifier)
     
     # Check relative to current directory
-    if os.path.exists(os.path.join(os.getcwd(), voice_identifier)):
-        return os.path.join(os.getcwd(), voice_identifier)
+    cwd_path = os.path.join(os.getcwd(), voice_identifier)
+    if os.path.exists(cwd_path):
+        return os.path.abspath(cwd_path)
+    
+    # Check relative to project root
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    project_path = os.path.join(project_root, voice_identifier)
+    if os.path.exists(project_path):
+        return project_path
+    
+    # Check relative to index-tts
+    index_tts_path = os.path.join(project_root, "index-tts", voice_identifier)
+    if os.path.exists(index_tts_path):
+        return index_tts_path
     
     return None
 
@@ -290,7 +330,8 @@ async def health_check():
     
     if tts_model is not None:
         device = str(tts_model.device)
-        model_version = tts_model.model_version
+        # Convert model_version to string if it's not already
+        model_version = str(tts_model.model_version) if tts_model.model_version is not None else None
     
     return HealthResponse(
         status="healthy" if tts_model is not None else "unhealthy",
@@ -310,7 +351,7 @@ async def model_info():
         )
     
     return ModelInfoResponse(
-        model_version=tts_model.model_version,
+        model_version=str(tts_model.model_version) if tts_model.model_version is not None else None,
         device=str(tts_model.device),
         use_fp16=tts_model.use_fp16,
         use_cuda_kernel=tts_model.use_cuda_kernel,
@@ -701,11 +742,16 @@ async def openai_audio_speech(request: OpenAITTSRequest):
     
     except Exception as e:
         import shutil
+        import traceback
+        error_msg = str(e) if str(e) else repr(e)
+        error_trace = traceback.format_exc()
+        print(f">> ERROR in TTS synthesis: {error_msg}")
+        print(f">> Traceback: {error_trace}")
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error during synthesis: {str(e)}",
+            detail=f"Error during synthesis: {error_msg}",
         )
 
 

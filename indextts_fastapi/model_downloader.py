@@ -144,8 +144,38 @@ def ensure_checkpoints(
             print(">> All checkpoints verified successfully!")
             return True
         else:
-            print(f">> WARNING: Some files are still missing after download: {', '.join(missing)}")
-            return False
+            # Try to copy missing files from index-tts checkpoints if available
+            model_path = Path(model_dir).resolve()
+            # Try multiple possible locations for index-tts checkpoints
+            possible_locations = [
+                model_path.parent / "index-tts" / "checkpoints",
+                Path.cwd() / "index-tts" / "checkpoints",
+                Path(__file__).parent.parent.parent / "index-tts" / "checkpoints",
+            ]
+            
+            copied_any = False
+            for index_tts_checkpoints in possible_locations:
+                if index_tts_checkpoints.exists():
+                    for file in missing[:]:  # Use slice to avoid modifying during iteration
+                        source_file = index_tts_checkpoints / file
+                        if source_file.exists():
+                            dest_file = model_path / file
+                            print(f">> Copying {file} from {index_tts_checkpoints}...")
+                            import shutil
+                            shutil.copy2(source_file, dest_file)
+                            missing.remove(file)
+                            copied_any = True
+                    if copied_any:
+                        break
+            
+            # Re-check after copying
+            all_exist, missing = check_checkpoints_exist(model_dir)
+            if all_exist:
+                print(">> All checkpoints verified successfully!")
+                return True
+            else:
+                print(f">> WARNING: Some files are still missing after download: {', '.join(missing)}")
+                return False
             
     except Exception as e:
         print(f">> Failed to download checkpoints: {e}")
