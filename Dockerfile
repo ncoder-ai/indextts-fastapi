@@ -109,6 +109,7 @@ ENV PATH="/root/.local/bin:/root/.cargo/bin:/usr/local/bin:$PATH"
 
 # Copy wrapper code
 COPY --chown=root:root pyproject.toml /app/wrapper/
+COPY --chown=root:root README.md /app/wrapper/
 COPY --chown=root:root indextts_fastapi/ /app/wrapper/indextts_fastapi/
 
 # Install wrapper dependencies
@@ -183,6 +184,7 @@ ENV PYTHONPATH="/app/index-tts:/usr/local/lib/python3.10/dist-packages:/usr/loca
 
 # Copy wrapper code
 COPY --chown=root:root pyproject.toml /app/wrapper/
+COPY --chown=root:root README.md /app/wrapper/
 COPY --chown=root:root indextts_fastapi/ /app/wrapper/indextts_fastapi/
 # Copy voice_mappings.json (optional - will be skipped if not in build context due to .dockerignore)
 COPY --chown=root:root voice_mappings.json /app/wrapper/voice_mappings.json
