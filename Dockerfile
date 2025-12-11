@@ -196,13 +196,15 @@ RUN uv venv /app/.venv && \
     # Install IndexTTS into the venv (this is stable, rarely changes)
     cd /app/index-tts && \
     uv pip install --python /app/.venv/bin/python -e . && \
-    # Install flash-attention for acceleration support (requires compilation)
+    # Try to install flash-attention for acceleration support (optional)
     # This is expensive but stable - cache it separately
     # Set MAX_JOBS to avoid OOM during compilation, use ninja for faster builds
-    MAX_JOBS=4 uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
-    # Verify flash-attention installation (fail build if it doesn't work)
-    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed successfully')" || \
-    (echo "ERROR: flash-attention installation or import failed" && exit 1)
+    echo ">> Attempting to install flash-attention (this may take 10-30 minutes)..." && \
+    (MAX_JOBS=4 uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
+     /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed successfully')" && \
+     echo "FLASH_ATTN_INSTALLED=true" > /tmp/flash_attn_status) || \
+    (echo "⚠ WARNING: flash-attention installation failed - ACCEL will be disabled" && \
+     echo "FLASH_ATTN_INSTALLED=false" > /tmp/flash_attn_status)
 
 # Copy wrapper code AFTER installing stable dependencies
 # This way code changes don't invalidate the expensive flash-attention compilation
