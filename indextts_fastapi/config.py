@@ -33,7 +33,7 @@ def get_voice_directories() -> List[str]:
     voice_dirs_env = os.getenv("INDEXTTS_VOICE_DIRECTORIES", "")
     if voice_dirs_env:
         return [d.strip() for d in voice_dirs_env.split(",") if d.strip()]
-    return ["examples", "prompts"]
+    return ["examples"]
 
 
 def discover_voices_from_directories() -> Dict[str, str]:

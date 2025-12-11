@@ -141,7 +141,7 @@ curl -X POST "http://localhost:8000/api/v1/tts" \
 | `INDEXTTS_USE_DEEPSPEED` | `false` | Use DeepSpeed acceleration (optimization only, not model parallelism) |
 | `INDEXTTS_USE_ACCEL` | `false` | Use acceleration engine |
 | `INDEXTTS_USE_TORCH_COMPILE` | `false` | Use torch.compile optimization |
-| `INDEXTTS_VOICE_DIRECTORIES` | `examples,prompts` | Comma-separated voice directories |
+| `INDEXTTS_VOICE_DIRECTORIES` | `examples` | Comma-separated voice directories |
 
 ### Voice Discovery
 
