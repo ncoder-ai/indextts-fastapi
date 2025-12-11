@@ -94,14 +94,20 @@ else
     exit 1
 fi
 
+# Get port from environment variable, default to 9877
+PORT="${INDEXTTS_PORT:-9877}"
+HOST="${INDEXTTS_HOST:-0.0.0.0}"
+
 # Run the API
-echo ">> Starting API server on http://0.0.0.0:8000"
-echo ">> API docs will be available at http://localhost:8000/docs"
+echo ">> Starting API server on http://${HOST}:${PORT}"
+echo ">> API docs will be available at http://localhost:${PORT}/docs"
 echo ">> Press Ctrl+C to stop"
 echo ""
 
 # Use the virtual environment Python if available
 cd "$PROJECT_ROOT"
+export INDEXTTS_PORT="$PORT"
+export INDEXTTS_HOST="$HOST"
 if [ -n "$VENV_PYTHON" ]; then
     "$VENV_PYTHON" -m indextts_fastapi.api
 else

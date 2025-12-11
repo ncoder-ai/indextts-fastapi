@@ -838,10 +838,14 @@ def main():
     """Main entry point for running the API server"""
     import uvicorn
     
+    # Get port from environment variable, default to 9877
+    port = int(os.getenv("INDEXTTS_PORT", "9877"))
+    host = os.getenv("INDEXTTS_HOST", "0.0.0.0")
+    
     uvicorn.run(
         "indextts_fastapi.api:app",
-        host="0.0.0.0",
-        port=8000,
+        host=host,
+        port=port,
         reload=False,  # Set to True for development
     )
 

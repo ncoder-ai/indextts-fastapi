@@ -10,9 +10,9 @@ def get_model_config() -> Dict:
     return {
         "cfg_path": os.getenv("INDEXTTS_CFG_PATH", "checkpoints/config.yaml"),
         "model_dir": os.getenv("INDEXTTS_MODEL_DIR", "checkpoints"),
-        "use_fp16": os.getenv("INDEXTTS_USE_FP16", "false").lower() == "true",
+        "use_fp16": os.getenv("INDEXTTS_USE_FP16", "true").lower() == "true",  # Default: enabled for lower VRAM
         "use_cuda_kernel": os.getenv("INDEXTTS_USE_CUDA_KERNEL", "false").lower() == "true",
-        "use_deepspeed": os.getenv("INDEXTTS_USE_DEEPSPEED", "false").lower() == "true",
+        "use_deepspeed": os.getenv("INDEXTTS_USE_DEEPSPEED", "true").lower() == "true",  # Default: enabled for multi-GPU
         "use_accel": os.getenv("INDEXTTS_USE_ACCEL", "false").lower() == "true",
         "use_torch_compile": os.getenv("INDEXTTS_USE_TORCH_COMPILE", "false").lower() == "true",
     }

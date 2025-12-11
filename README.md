@@ -47,7 +47,8 @@ pip install -e .
 ```bash
 export INDEXTTS_MODEL_DIR="checkpoints"
 export INDEXTTS_CFG_PATH="checkpoints/config.yaml"
-export INDEXTTS_USE_FP16="true"  # For lower VRAM usage
+export INDEXTTS_USE_FP16="true"  # Enabled by default for lower VRAM usage
+export INDEXTTS_USE_DEEPSPEED="true"  # Enabled by default for multi-GPU support
 ```
 
 ### 2. Run the API server

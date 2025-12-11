@@ -56,6 +56,13 @@ if command -v uv &> /dev/null; then
     uv pip install --python "$VENV_PYTHON" -e .
     echo ">> IndexTTS installed successfully with uv"
     
+    # Try to install DeepSpeed for multi-GPU support (optional, will fall back if unavailable)
+    echo ">> Attempting to install DeepSpeed for multi-GPU support..."
+    uv pip install --python "$VENV_PYTHON" deepspeed==0.17.1 || {
+        echo ">> WARNING: DeepSpeed installation failed or not available."
+        echo ">> Multi-GPU support will be disabled. Single GPU will still work."
+    }
+    
     # Install wrapper dependencies
     echo ">> Installing wrapper dependencies..."
     cd "$PROJECT_ROOT"
