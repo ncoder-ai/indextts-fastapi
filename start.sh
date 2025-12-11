@@ -26,9 +26,9 @@ else
     USE_UV=true
 fi
 
-# Check if indextts module can be imported
+# Install IndexTTS if not already installed
 if ! python3 -c "import sys; sys.path.insert(0, '$INDEXTTS_REPO_PATH'); import indextts" 2>/dev/null; then
-    echo ">> WARNING: IndexTTS module not found. Attempting to install..."
+    echo ">> IndexTTS not installed. Installing with dependencies..."
     cd "$INDEXTTS_REPO_PATH"
     if [ "$USE_UV" = true ]; then
         uv sync --no-dev
@@ -39,6 +39,25 @@ if ! python3 -c "import sys; sys.path.insert(0, '$INDEXTTS_REPO_PATH'); import i
         exit 1
     fi
     cd "$PROJECT_ROOT"
+fi
+
+# Verify torch is available (required by IndexTTS)
+if ! python3 -c "import torch" 2>/dev/null; then
+    echo ">> WARNING: torch not found. Installing IndexTTS dependencies..."
+    cd "$INDEXTTS_REPO_PATH"
+    if [ "$USE_UV" = true ]; then
+        uv sync --no-dev
+    elif command -v pip &> /dev/null; then
+        pip install -e .
+    fi
+    cd "$PROJECT_ROOT"
+    
+    # Check again
+    if ! python3 -c "import torch" 2>/dev/null; then
+        echo ">> ERROR: torch still not available. Please ensure IndexTTS is properly installed."
+        echo ">> Try running: cd $INDEXTTS_REPO_PATH && uv sync --no-dev"
+        exit 1
+    fi
 fi
 
 # Set PYTHONPATH to include IndexTTS
