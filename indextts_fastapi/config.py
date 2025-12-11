@@ -28,78 +28,6 @@ def get_auto_download_config() -> Dict:
     }
 
 
-def get_voice_directories() -> List[str]:
-    """Get voice directories from environment or defaults"""
-    voice_dirs_env = os.getenv("INDEXTTS_VOICE_DIRECTORIES", "")
-    if voice_dirs_env:
-        return [d.strip() for d in voice_dirs_env.split(",") if d.strip()]
-    return ["examples"]
-
-
-def discover_voices_from_directories() -> Dict[str, str]:
-    """
-    Dynamically discover voices from configured directories.
-    
-    Scans voice directories and creates mappings from filenames.
-    
-    Returns:
-        Dict mapping voice IDs to file paths
-    """
-    mappings = {}
-    project_root = Path(__file__).parent.parent
-    voice_dirs = get_voice_directories()
-    audio_extensions = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".opus"}
-    
-    for directory in voice_dirs:
-        # Resolve directory path - try project root first
-        if not os.path.isabs(directory):
-            full_dir = os.path.join(project_root, directory)
-            if not os.path.exists(full_dir):
-                # Fallback to index-tts directory
-                full_dir = os.path.join(project_root, "index-tts", directory)
-                if not os.path.exists(full_dir):
-                    continue
-            directory = full_dir
-        elif not os.path.exists(directory):
-            continue
-        
-        # Scan directory for audio files
-        try:
-            for filename in os.listdir(directory):
-                file_path = os.path.join(directory, filename)
-                
-                # Skip if not a file or not an audio file
-                if not os.path.isfile(file_path):
-                    continue
-                
-                # Check if it's an audio file
-                _, ext = os.path.splitext(filename.lower())
-                if ext not in audio_extensions:
-                    continue
-                
-                # Skip emotion reference files
-                if "emo_" in filename.lower():
-                    continue
-                
-                # Create voice name from filename (without extension)
-                voice_name = os.path.splitext(filename)[0]
-                
-                # Use relative path from project root for consistency
-                try:
-                    rel_path = os.path.relpath(file_path, project_root)
-                except ValueError:
-                    # If relative path fails (different drives on Windows), use absolute
-                    rel_path = file_path
-                
-                # Only add if not already in mappings (first found wins)
-                if voice_name not in mappings:
-                    mappings[voice_name] = rel_path
-        except PermissionError:
-            print(f">> WARNING: Permission denied accessing {directory}")
-        except Exception as e:
-            print(f">> WARNING: Error scanning {directory}: {e}")
-    
-    return mappings
 
 
 # Track which voices are presets (from JSON file) vs dynamically discovered
@@ -107,20 +35,18 @@ _PRESET_VOICE_IDS = set()
 
 def load_voice_mappings() -> Dict[str, str]:
     """
-    Load OpenAI-compatible voice mappings.
+    Load optional voice mappings from voice_mappings.json for aliases.
     
-    Strategy:
-    1. Load optional voice_mappings.json for preset mappings
-    2. Dynamically discover voices from configured directories (examples, prompts, etc.)
-    3. Merge them (discovered voices added, JSON presets take priority)
+    This is kept for backward compatibility to support aliases (e.g., "alloy" -> "voice_01").
+    Voice discovery is now handled directly in api.py via discover_voice_files().
     
     Returns:
-        Dict mapping voice IDs to file paths
+        Dict mapping alias IDs to file paths (relative paths)
     """
     global _PRESET_VOICE_IDS
     _PRESET_VOICE_IDS.clear()
     
-    # Step 1: Load optional JSON file for preset mappings
+    # Load optional JSON file for alias mappings
     project_root = Path(__file__).parent.parent
     voice_mappings_file = project_root / "voice_mappings.json"
     
@@ -135,7 +61,7 @@ def load_voice_mappings() -> Dict[str, str]:
                 json_mappings = json.load(f)
                 if isinstance(json_mappings, dict):
                     _PRESET_VOICE_IDS = set(json_mappings.keys())
-                    print(f">> Loaded {len(json_mappings)} preset mappings from {voice_mappings_file}")
+                    print(f">> Loaded {len(json_mappings)} alias mappings from {voice_mappings_file} (optional)")
                 else:
                     print(f">> WARNING: voice_mappings.json is not a valid JSON object. Ignoring.")
                     json_mappings = {}
@@ -144,22 +70,7 @@ def load_voice_mappings() -> Dict[str, str]:
         except Exception as e:
             print(f">> WARNING: Error loading voice_mappings.json: {e}. Ignoring.")
     
-    # Step 2: Dynamically discover voices from directories
-    discovered_mappings = discover_voices_from_directories()
-    print(f">> Discovered {len(discovered_mappings)} voices from configured directories")
-    
-    # Step 3: Merge - JSON presets first, then discovered voices (discovered don't override presets)
-    final_mappings = json_mappings.copy()
-    for voice_id, file_path in discovered_mappings.items():
-        if voice_id not in final_mappings:  # Don't override presets
-            final_mappings[voice_id] = file_path
-    
-    if json_mappings:
-        print(f">> Total voice mappings: {len(final_mappings)} ({len(json_mappings)} presets + {len(discovered_mappings)} discovered)")
-    else:
-        print(f">> Total voice mappings: {len(final_mappings)} (all dynamically discovered)")
-    
-    return final_mappings
+    return json_mappings
 
 
 def is_preset_voice(voice_id: str) -> bool:

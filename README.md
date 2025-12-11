@@ -141,12 +141,21 @@ curl -X POST "http://localhost:8000/api/v1/tts" \
 | `INDEXTTS_USE_DEEPSPEED` | `false` | Use DeepSpeed acceleration (optimization only, not model parallelism) |
 | `INDEXTTS_USE_ACCEL` | `false` | Use acceleration engine |
 | `INDEXTTS_USE_TORCH_COMPILE` | `false` | Use torch.compile optimization |
-| `INDEXTTS_VOICE_DIRECTORIES` | `examples` | Comma-separated voice directories |
+| `INDEXTTS_VOICE_DIR` | `examples` | Voice directory path (relative to project root or absolute) |
 
 ### Voice Discovery
 
-The API automatically discovers voice files in configured directories. Supported formats:
+The API automatically discovers voice files from a single configured directory. Supported formats:
 - `.wav`, `.mp3`, `.flac`, `.m4a`, `.ogg`, `.opus`
+
+**Configuration:**
+- Set `INDEXTTS_VOICE_DIR` environment variable to specify the voice directory
+- Default: `examples` (relative to project root)
+- In Docker: Set to `/app/examples` to match the mounted volume
+
+**Voice files are identified by their filename (without extension):**
+- `voice_01.wav` → voice ID: `voice_01`
+- `voice_12.wav` → voice ID: `voice_12`
 
 List all available voices:
 ```bash
