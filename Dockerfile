@@ -92,8 +92,9 @@ RUN set +e; \
     set -e
 
 # Install IndexTTS using uv pip (installs to system Python)
+# Use --break-system-packages to override PEP 668 externally-managed check in Ubuntu 22.04
 WORKDIR ${INDEXTTS_REPO_PATH}
-RUN uv pip install --system -e . && \
+RUN uv pip install --system --break-system-packages -e . && \
     # Clean up pip cache and temporary files
     uv pip cache purge 2>/dev/null || true && \
     rm -rf /tmp/* /var/tmp/*
@@ -111,8 +112,9 @@ COPY --chown=root:root pyproject.toml /app/wrapper/
 COPY --chown=root:root indextts_fastapi/ /app/wrapper/indextts_fastapi/
 
 # Install wrapper dependencies
+# Use --break-system-packages to override PEP 668 externally-managed check in Ubuntu 22.04
 WORKDIR /app/wrapper
-RUN uv pip install --system -e . && \
+RUN uv pip install --system --break-system-packages -e . && \
     # Verify uvicorn was installed
     python3 -c "import uvicorn; print('uvicorn installed at:', uvicorn.__file__)" && \
     # Show where packages are installed
@@ -190,7 +192,8 @@ WORKDIR /app/wrapper
 # Install wrapper dependencies using uv (following setup.sh/start.sh approach)
 # This ensures consistency with the scripts and that uvicorn is available
 # We install here even though we copied packages, to ensure everything is fresh and working
-RUN uv pip install --system -e . && \
+# Use --break-system-packages to override PEP 668 externally-managed check in Ubuntu 22.04
+RUN uv pip install --system --break-system-packages -e . && \
     # Verify uvicorn is installed and show where it's located
     /usr/bin/python3 -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__); print('Location:', uvicorn.__file__)" && \
     /usr/bin/python3 -c "import fastapi; print('✓ fastapi installed')" && \
