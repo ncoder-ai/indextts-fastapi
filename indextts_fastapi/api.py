@@ -846,10 +846,11 @@ async def list_voices():
     discovered = discover_voice_files()
     voices_list = []
     
-    # Add all voices from OPENAI_VOICE_MAP, marking presets correctly
-    for voice_id, file_path in OPENAI_VOICE_MAP.items():
+    # Process all discovered voices (which already includes OPENAI_VOICE_MAP)
+    # Mark presets correctly for voices that are in OPENAI_VOICE_MAP
+    for voice_id, file_path in discovered.items():
         # Check if this is a preset (from JSON) or dynamically discovered
-        is_preset = is_preset_voice(voice_id)
+        is_preset = is_preset_voice(voice_id) if voice_id in OPENAI_VOICE_MAP else False
         voice_name = os.path.splitext(os.path.basename(file_path))[0]
         voices_list.append(VoiceInfo(
             id=voice_id,
@@ -857,17 +858,6 @@ async def list_voices():
             file_path=file_path,
             is_preset=is_preset
         ))
-    
-    # Add any additional discovered voices not in OPENAI_VOICE_MAP
-    for voice_id, file_path in discovered.items():
-        if voice_id not in OPENAI_VOICE_MAP:
-            voice_name = os.path.splitext(os.path.basename(file_path))[0]
-            voices_list.append(VoiceInfo(
-                id=voice_id,
-                name=voice_name,
-                file_path=file_path,
-                is_preset=False
-            ))
     
     return VoicesResponse(data=voices_list)
 
@@ -883,22 +873,17 @@ async def list_voices_audio():
     discovered = discover_voice_files()
     voices_list = []
     
-    # Add all voices from OPENAI_VOICE_MAP
-    for voice_id, file_path in OPENAI_VOICE_MAP.items():
+    # Use discovered voices (which already includes OPENAI_VOICE_MAP)
+    # Extract name from file path (filename without extension)
+    for voice_id, file_path in discovered.items():
         voice_name = os.path.splitext(os.path.basename(file_path))[0]
         voices_list.append(SimpleVoiceInfo(
             id=voice_id,
             name=voice_name
         ))
     
-    # Add any additional discovered voices not in OPENAI_VOICE_MAP
-    for voice_id, file_path in discovered.items():
-        if voice_id not in OPENAI_VOICE_MAP:
-            voice_name = os.path.splitext(os.path.basename(file_path))[0]
-            voices_list.append(SimpleVoiceInfo(
-                id=voice_id,
-                name=voice_name
-            ))
+    # Sort by voice ID for consistent output
+    voices_list.sort(key=lambda v: v.id)
     
     return SimpleVoicesResponse(data=voices_list)
 

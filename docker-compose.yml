@@ -14,6 +14,10 @@ services:
       # Optional: Mount voice examples if you have custom voices
       - ./examples:/app/examples:ro
     environment:
+      # Server configuration
+      - INDEXTTS_PORT=8000  # Internal container port (mapped to host 9877)
+      - INDEXTTS_HOST=0.0.0.0
+      
       # Model configuration
       - INDEXTTS_MODEL_DIR=/app/checkpoints
       - INDEXTTS_CFG_PATH=/app/checkpoints/config.yaml
