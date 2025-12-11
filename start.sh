@@ -41,27 +41,25 @@ if ! python3 -c "import sys; sys.path.insert(0, '$INDEXTTS_REPO_PATH'); import i
     cd "$PROJECT_ROOT"
 fi
 
-# Verify torch is available (required by IndexTTS)
-if ! python3 -c "import torch" 2>/dev/null; then
-    echo ">> WARNING: torch not found. Installing IndexTTS dependencies..."
+# Ensure IndexTTS is installed with uv
+if [ "$USE_UV" = true ]; then
     cd "$INDEXTTS_REPO_PATH"
-    if [ "$USE_UV" = true ]; then
+    if [ ! -d ".venv" ]; then
+        echo ">> Installing IndexTTS dependencies with uv..."
         uv sync --no-dev
-    elif command -v pip &> /dev/null; then
-        pip install -e .
+    else
+        echo ">> IndexTTS environment found, verifying installation..."
+        # Verify torch is available in uv environment
+        if ! uv run python -c "import torch" 2>/dev/null; then
+            echo ">> torch not found in uv environment, syncing dependencies..."
+            uv sync --no-dev
+        fi
     fi
     cd "$PROJECT_ROOT"
-    
-    # Check again
-    if ! python3 -c "import torch" 2>/dev/null; then
-        echo ">> ERROR: torch still not available. Please ensure IndexTTS is properly installed."
-        echo ">> Try running: cd $INDEXTTS_REPO_PATH && uv sync --no-dev"
-        exit 1
-    fi
 fi
 
-# Set PYTHONPATH to include IndexTTS
-export PYTHONPATH="$INDEXTTS_REPO_PATH:$PYTHONPATH"
+# Set PYTHONPATH to include both IndexTTS and wrapper
+export PYTHONPATH="$PROJECT_ROOT:$INDEXTTS_REPO_PATH:$PYTHONPATH"
 
 # Check if wrapper dependencies are installed
 if ! python3 -c "import fastapi, uvicorn" 2>/dev/null; then
@@ -82,16 +80,17 @@ echo ">> API docs will be available at http://localhost:8000/docs"
 echo ">> Press Ctrl+C to stop"
 echo ""
 
-cd "$PROJECT_ROOT"
-
 # Use uv run if available to ensure correct environment, otherwise use python3
 if [ "$USE_UV" = true ] && [ -d "$INDEXTTS_REPO_PATH/.venv" ]; then
     # Use uv run from IndexTTS directory to get its environment
+    # But run the wrapper module from the project root
     echo ">> Using uv run with IndexTTS environment..."
     cd "$INDEXTTS_REPO_PATH"
+    # PYTHONPATH is already set to include both directories
     uv run python -m indextts_fastapi.api
 else
-    # Fallback to direct python3
+    # Fallback to direct python3 (may not work if torch isn't in system Python)
+    cd "$PROJECT_ROOT"
     python3 -m indextts_fastapi.api
 fi
 
