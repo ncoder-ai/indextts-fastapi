@@ -83,5 +83,15 @@ echo ">> Press Ctrl+C to stop"
 echo ""
 
 cd "$PROJECT_ROOT"
-python3 -m indextts_fastapi.api
+
+# Use uv run if available to ensure correct environment, otherwise use python3
+if [ "$USE_UV" = true ] && [ -d "$INDEXTTS_REPO_PATH/.venv" ]; then
+    # Use uv run from IndexTTS directory to get its environment
+    echo ">> Using uv run with IndexTTS environment..."
+    cd "$INDEXTTS_REPO_PATH"
+    uv run python -m indextts_fastapi.api
+else
+    # Fallback to direct python3
+    python3 -m indextts_fastapi.api
+fi
 
