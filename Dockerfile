@@ -129,13 +129,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install only runtime dependencies (minimal)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
     python3.10 \
     python3.10-minimal \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
-    && rm -rf /tmp/* /var/tmp/*
+    && rm -rf /tmp/* /var/tmp/* && \
+    # Verify python3 is available
+    python3 --version
 
 # Set working directory
 WORKDIR /app
