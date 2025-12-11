@@ -23,13 +23,19 @@ fi
 if [ -d "$INDEXTTS_REPO_PATH" ]; then
     echo ">> IndexTTS repo exists, pulling latest changes..."
     cd "$INDEXTTS_REPO_PATH"
-    git pull
-    git lfs pull  # Download large files
+    git pull || true
+    echo ">> Attempting to download LFS files (may fail due to quota limits)..."
+    git lfs pull || echo ">> WARNING: LFS pull failed (examples files may be missing, but API will still work)"
 else
     echo ">> Cloning IndexTTS repo..."
-    git clone "$INDEXTTS_REPO_URL" "$INDEXTTS_REPO_PATH"
+    # Clone without LFS checkout first to avoid immediate failure
+    GIT_LFS_SKIP_SMUDGE=1 git clone "$INDEXTTS_REPO_URL" "$INDEXTTS_REPO_PATH" || {
+        echo ">> Clone failed, trying without LFS skip..."
+        git clone "$INDEXTTS_REPO_URL" "$INDEXTTS_REPO_PATH"
+    }
     cd "$INDEXTTS_REPO_PATH"
-    git lfs pull  # Download large files
+    echo ">> Attempting to download LFS files (may fail due to quota limits)..."
+    git lfs pull || echo ">> WARNING: LFS pull failed (examples files may be missing, but API will still work)"
 fi
 
 # Check if uv is installed
