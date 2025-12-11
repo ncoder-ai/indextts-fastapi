@@ -113,6 +113,10 @@ COPY --chown=root:root indextts_fastapi/ /app/wrapper/indextts_fastapi/
 # Install wrapper dependencies
 WORKDIR /app/wrapper
 RUN uv pip install --system -e . && \
+    # Verify uvicorn was installed
+    python3 -c "import uvicorn; print('uvicorn installed at:', uvicorn.__file__)" && \
+    # Show where packages are installed
+    python3 -c "import site; print('Site packages:', site.getsitepackages())" && \
     # Clean up pip cache and temporary files
     uv pip cache purge 2>/dev/null || true && \
     rm -rf /tmp/* /var/tmp/*
@@ -132,13 +136,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
     python3.10-minimal \
+    python3-pip \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
-    # Verify python3 is available
-    python3 --version
+    # Verify python3 and pip are available
+    python3 --version && \
+    python3 -m pip --version
 
 # Set working directory
 WORKDIR /app
@@ -153,7 +159,7 @@ COPY --from=indextts-install --chown=root:root /app/index-tts /app/index-tts
 
 # Copy Python packages from builder stages
 # uv pip install --system installs to /usr/local/lib/python3.10/dist-packages/ (Ubuntu/Debian)
-# Create target directories and copy packages
+# Create target directories first
 RUN mkdir -p /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/site-packages /root/.local/bin
 
 # Copy packages from system Python location (where --system installs)
@@ -163,8 +169,16 @@ COPY --from=wrapper-install --chown=root:root /usr/local/lib/python3.10/dist-pac
 # Set PATH to include .local/bin
 ENV PATH="/root/.local/bin:$PATH"
 
-# Set Python path to include IndexTTS
-ENV PYTHONPATH="/app/index-tts:$PYTHONPATH"
+# Set Python path to include IndexTTS and ensure dist-packages is in Python's search path
+ENV PYTHONPATH="/app/index-tts:/usr/local/lib/python3.10/dist-packages:/usr/local/lib/python3.10/site-packages:$PYTHONPATH"
+
+# Verify packages are accessible (this will fail the build if uvicorn is missing, helping us debug)
+RUN python3 -c "import sys; print('Python executable:', sys.executable); print('Python version:', sys.version); print('Python path:', sys.path)" && \
+    python3 -c "import uvicorn; print('✓ uvicorn found:', uvicorn.__version__)" && \
+    python3 -c "import fastapi; print('✓ fastapi found')" || \
+    (echo "ERROR: Required packages not found. Checking installed packages..." && \
+     ls -la /usr/local/lib/python3.10/dist-packages/ | head -20 && \
+     exit 1)
 
 # Copy wrapper code
 COPY --chown=root:root pyproject.toml /app/wrapper/
@@ -173,6 +187,13 @@ COPY --chown=root:root indextts_fastapi/ /app/wrapper/indextts_fastapi/
 COPY --chown=root:root voice_mappings.json /app/wrapper/voice_mappings.json
 
 WORKDIR /app/wrapper
+
+# Install wrapper dependencies directly in runtime to ensure they're accessible
+# This ensures uvicorn and other dependencies are available even if copying from builder failed
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    python3 -m pip install --no-cache-dir -e . && \
+    python3 -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
+    python3 -c "import fastapi; print('✓ fastapi installed')"
 
 # Create checkpoints directory (will be mounted or auto-downloaded)
 RUN mkdir -p /app/checkpoints
