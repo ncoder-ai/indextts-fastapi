@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  indextts-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: indextts-fastapi
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount checkpoints directory for persistence
+      - ./checkpoints:/app/checkpoints
+      # Optional: Mount voice examples if you have custom voices
+      - ./examples:/app/examples:ro
+    environment:
+      # Model configuration
+      - INDEXTTS_MODEL_DIR=/app/checkpoints
+      - INDEXTTS_CFG_PATH=/app/checkpoints/config.yaml
+      - INDEXTTS_AUTO_DOWNLOAD=true
+      - INDEXTTS_HF_REPO=IndexTeam/IndexTTS-2
+      
+      # Performance settings
+      - INDEXTTS_USE_FP16=false
+      - INDEXTTS_USE_CUDA_KERNEL=false
+      - INDEXTTS_USE_DEEPSPEED=false
+      - INDEXTTS_USE_ACCEL=false
+      - INDEXTTS_USE_TORCH_COMPILE=false
+      
+      # HuggingFace settings (optional, for mirroring)
+      - HF_ENDPOINT=${HF_ENDPOINT:-https://huggingface.co}
+      - HF_HUB_CACHE=/app/checkpoints/hf_cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
