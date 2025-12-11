@@ -31,7 +31,7 @@ services:
       - INDEXTTS_USE_FP16=true
       - INDEXTTS_USE_CUDA_KERNEL=true
       - INDEXTTS_USE_DEEPSPEED=true
-      - INDEXTTS_USE_ACCEL=true
+      - INDEXTTS_USE_ACCEL=false  # Requires flash_attn - enable if flash-attention is installed
       - INDEXTTS_USE_TORCH_COMPILE=true
       
       # HuggingFace settings (optional, for mirroring)
