@@ -102,23 +102,25 @@ def discover_voices_from_directories() -> Dict[str, str]:
     return mappings
 
 
+# Track which voices are presets (from JSON file) vs dynamically discovered
+_PRESET_VOICE_IDS = set()
+
 def load_voice_mappings() -> Dict[str, str]:
     """
     Load OpenAI-compatible voice mappings.
     
     Strategy:
-    1. Dynamically discover voices from configured directories (examples, prompts, etc.)
-    2. Load optional voice_mappings.json for custom mappings/overrides
-    3. Merge them (JSON overrides discovered voices)
+    1. Load optional voice_mappings.json for preset mappings
+    2. Dynamically discover voices from configured directories (examples, prompts, etc.)
+    3. Merge them (discovered voices added, JSON presets take priority)
     
     Returns:
         Dict mapping voice IDs to file paths
     """
-    # Step 1: Dynamically discover voices from directories
-    discovered_mappings = discover_voices_from_directories()
-    print(f">> Discovered {len(discovered_mappings)} voices from configured directories")
+    global _PRESET_VOICE_IDS
+    _PRESET_VOICE_IDS.clear()
     
-    # Step 2: Load optional JSON file for custom mappings/overrides
+    # Step 1: Load optional JSON file for preset mappings
     project_root = Path(__file__).parent.parent
     voice_mappings_file = project_root / "voice_mappings.json"
     
@@ -132,7 +134,8 @@ def load_voice_mappings() -> Dict[str, str]:
             with open(voice_mappings_file, 'r', encoding='utf-8') as f:
                 json_mappings = json.load(f)
                 if isinstance(json_mappings, dict):
-                    print(f">> Loaded {len(json_mappings)} custom mappings from {voice_mappings_file}")
+                    _PRESET_VOICE_IDS = set(json_mappings.keys())
+                    print(f">> Loaded {len(json_mappings)} preset mappings from {voice_mappings_file}")
                 else:
                     print(f">> WARNING: voice_mappings.json is not a valid JSON object. Ignoring.")
                     json_mappings = {}
@@ -141,16 +144,35 @@ def load_voice_mappings() -> Dict[str, str]:
         except Exception as e:
             print(f">> WARNING: Error loading voice_mappings.json: {e}. Ignoring.")
     
-    # Step 3: Merge - discovered voices first, then JSON overrides/additions
-    final_mappings = discovered_mappings.copy()
-    final_mappings.update(json_mappings)  # JSON mappings override discovered ones
+    # Step 2: Dynamically discover voices from directories
+    discovered_mappings = discover_voices_from_directories()
+    print(f">> Discovered {len(discovered_mappings)} voices from configured directories")
+    
+    # Step 3: Merge - JSON presets first, then discovered voices (discovered don't override presets)
+    final_mappings = json_mappings.copy()
+    for voice_id, file_path in discovered_mappings.items():
+        if voice_id not in final_mappings:  # Don't override presets
+            final_mappings[voice_id] = file_path
     
     if json_mappings:
-        print(f">> Total voice mappings: {len(final_mappings)} ({len(discovered_mappings)} discovered + {len(json_mappings)} from JSON)")
+        print(f">> Total voice mappings: {len(final_mappings)} ({len(json_mappings)} presets + {len(discovered_mappings)} discovered)")
     else:
         print(f">> Total voice mappings: {len(final_mappings)} (all dynamically discovered)")
     
     return final_mappings
+
+
+def is_preset_voice(voice_id: str) -> bool:
+    """
+    Check if a voice ID is a preset (from JSON file).
+    
+    Args:
+        voice_id: Voice identifier
+        
+    Returns:
+        True if voice is a preset, False if dynamically discovered
+    """
+    return voice_id in _PRESET_VOICE_IDS
 
 
 # OpenAI-compatible voice mapping (dynamically generated + optional JSON overrides)

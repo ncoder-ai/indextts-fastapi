@@ -6,6 +6,7 @@ Includes OpenAI-compatible endpoints for easy integration
 import os
 import tempfile
 import uuid
+from contextlib import asynccontextmanager
 from typing import List, Optional, Literal
 
 import torch
@@ -21,15 +22,9 @@ from .config import (
     OPENAI_VOICE_MAP,
     DEFAULT_VOICE,
     AUDIO_EXTENSIONS,
+    is_preset_voice,
 )
 from .model_downloader import ensure_checkpoints
-
-# Initialize FastAPI app
-app = FastAPI(
-    title="IndexTTS2 API",
-    description="REST API for IndexTTS2: Emotionally Expressive and Duration-Controlled Zero-Shot Text-to-Speech",
-    version="1.0.0",
-)
 
 # Global model instance
 tts_model: Optional[IndexTTS2] = None
@@ -38,6 +33,66 @@ auto_download_config = get_auto_download_config()
 
 # Get voice directories from config
 VOICE_DIRECTORIES = get_voice_directories()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    global tts_model
+    
+    # Startup
+    try:
+        # Get configuration
+        cfg_path = model_config["cfg_path"]
+        model_dir = model_config["model_dir"]
+        
+        # Ensure checkpoints exist (auto-download if enabled)
+        print(">> Checking for IndexTTS2 checkpoints...")
+        checkpoints_ok = ensure_checkpoints(
+            model_dir=model_dir,
+            repo_id=auto_download_config["hf_repo"],
+            auto_download=auto_download_config["auto_download"]
+        )
+        
+        if not checkpoints_ok:
+            raise FileNotFoundError(
+                f"Required checkpoints are missing in {model_dir}. "
+                f"Please download them manually or enable auto-download."
+            )
+        
+        # Verify config file exists
+        if not os.path.exists(cfg_path):
+            raise FileNotFoundError(f"Config file not found: {cfg_path}")
+        
+        # Create model directory if it doesn't exist
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir, exist_ok=True)
+        
+        print(f">> Loading IndexTTS2 model from {model_dir}...")
+        tts_model = IndexTTS2(**model_config)
+        print(">> Model loaded successfully!")
+    except Exception as e:
+        print(f">> ERROR: Failed to load model: {e}")
+        tts_model = None
+        raise
+    
+    yield  # App is running
+    
+    # Shutdown
+    if tts_model is not None:
+        # Clear CUDA cache if using GPU
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    tts_model = None
+
+
+# Initialize FastAPI app with lifespan
+app = FastAPI(
+    title="IndexTTS2 API",
+    description="REST API for IndexTTS2: Emotionally Expressive and Duration-Controlled Zero-Shot Text-to-Speech",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 
 def get_app():
@@ -215,14 +270,26 @@ class VoiceInfo(BaseModel):
     """Voice information model"""
     id: str
     name: str
-    file_path: str
-    is_preset: bool
+    file_path: Optional[str] = None  # Optional for compatibility
+    is_preset: Optional[bool] = None  # Optional for compatibility
+
+
+class SimpleVoiceInfo(BaseModel):
+    """Simplified voice info for OpenAI-compatible APIs (just id and name)"""
+    id: str
+    name: str
 
 
 class VoicesResponse(BaseModel):
     """Response model for voices list"""
     object: str = "list"
     data: List[VoiceInfo]
+
+
+class SimpleVoicesResponse(BaseModel):
+    """Simplified response model for OpenAI-compatible voice listing"""
+    object: str = "list"
+    data: List[SimpleVoiceInfo]
 
 
 class OpenAITTSRequest(BaseModel):
@@ -281,56 +348,7 @@ class TTSRequest(BaseModel):
     verbose: bool = Field(False, description="Enable verbose logging")
 
 
-# Startup and shutdown events
-@app.on_event("startup")
-async def load_model():
-    """Load the TTS model on startup"""
-    global tts_model
-    try:
-        # Get configuration
-        cfg_path = model_config["cfg_path"]
-        model_dir = model_config["model_dir"]
-        
-        # Ensure checkpoints exist (auto-download if enabled)
-        print(">> Checking for IndexTTS2 checkpoints...")
-        checkpoints_ok = ensure_checkpoints(
-            model_dir=model_dir,
-            repo_id=auto_download_config["hf_repo"],
-            auto_download=auto_download_config["auto_download"]
-        )
-        
-        if not checkpoints_ok:
-            raise FileNotFoundError(
-                f"Required checkpoints are missing in {model_dir}. "
-                f"Please download them manually or enable auto-download."
-            )
-        
-        # Verify config file exists
-        if not os.path.exists(cfg_path):
-            raise FileNotFoundError(f"Config file not found: {cfg_path}")
-        
-        # Create model directory if it doesn't exist
-        if not os.path.exists(model_dir):
-            os.makedirs(model_dir, exist_ok=True)
-        
-        print(f">> Loading IndexTTS2 model from {model_dir}...")
-        tts_model = IndexTTS2(**model_config)
-        print(">> Model loaded successfully!")
-    except Exception as e:
-        print(f">> ERROR: Failed to load model: {e}")
-        tts_model = None
-        raise
-
-
-@app.on_event("shutdown")
-async def cleanup():
-    """Cleanup on shutdown"""
-    global tts_model
-    if tts_model is not None:
-        # Clear CUDA cache if using GPU
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    tts_model = None
+# Startup and shutdown are now handled by the lifespan context manager above
 
 
 # API Endpoints
@@ -828,19 +846,21 @@ async def list_voices():
     discovered = discover_voice_files()
     voices_list = []
     
-    # Add preset voices
+    # Add all voices from OPENAI_VOICE_MAP, marking presets correctly
     for voice_id, file_path in OPENAI_VOICE_MAP.items():
+        # Check if this is a preset (from JSON) or dynamically discovered
+        is_preset = is_preset_voice(voice_id)
+        voice_name = os.path.splitext(os.path.basename(file_path))[0]
         voices_list.append(VoiceInfo(
             id=voice_id,
-            name=voice_id,
+            name=voice_name,
             file_path=file_path,
-            is_preset=True
+            is_preset=is_preset
         ))
     
-    # Add discovered voices (excluding presets)
+    # Add any additional discovered voices not in OPENAI_VOICE_MAP
     for voice_id, file_path in discovered.items():
         if voice_id not in OPENAI_VOICE_MAP:
-            # Get a clean name from the file path
             voice_name = os.path.splitext(os.path.basename(file_path))[0]
             voices_list.append(VoiceInfo(
                 id=voice_id,
@@ -852,15 +872,35 @@ async def list_voices():
     return VoicesResponse(data=voices_list)
 
 
-@app.get("/v1/audio/voices", response_model=VoicesResponse)
+@app.get("/v1/audio/voices", response_model=SimpleVoicesResponse)
 async def list_voices_audio():
     """
     List all available voices (OpenAI-compatible path)
     
     This endpoint is under /v1/audio/ to match OpenAI API structure.
-    Same functionality as /v1/voices.
+    Returns a simplified format with just id and name for better compatibility.
     """
-    return await list_voices()
+    discovered = discover_voice_files()
+    voices_list = []
+    
+    # Add all voices from OPENAI_VOICE_MAP
+    for voice_id, file_path in OPENAI_VOICE_MAP.items():
+        voice_name = os.path.splitext(os.path.basename(file_path))[0]
+        voices_list.append(SimpleVoiceInfo(
+            id=voice_id,
+            name=voice_name
+        ))
+    
+    # Add any additional discovered voices not in OPENAI_VOICE_MAP
+    for voice_id, file_path in discovered.items():
+        if voice_id not in OPENAI_VOICE_MAP:
+            voice_name = os.path.splitext(os.path.basename(file_path))[0]
+            voices_list.append(SimpleVoiceInfo(
+                id=voice_id,
+                name=voice_name
+            ))
+    
+    return SimpleVoicesResponse(data=voices_list)
 
 
 @app.get("/api/v1/voices", response_model=VoicesResponse)
