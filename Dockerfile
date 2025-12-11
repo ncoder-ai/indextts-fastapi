@@ -189,22 +189,19 @@ COPY --chown=root:root voice_mappings.json /app/wrapper/voice_mappings.json
 
 WORKDIR /app/wrapper
 
-# Install wrapper dependencies using uv (following setup.sh/start.sh approach)
-# This ensures consistency with the scripts and that uvicorn is available
-# We install here even though we copied packages, to ensure everything is fresh and working
-# Use --break-system-packages to override PEP 668 externally-managed check in Ubuntu 22.04
-RUN uv pip install --system --break-system-packages -e . && \
-    # Verify uvicorn is installed and show where it's located
-    /usr/bin/python3 -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__); print('Location:', uvicorn.__file__)" && \
-    /usr/bin/python3 -c "import fastapi; print('✓ fastapi installed')" && \
-    # Verify uvicorn is accessible via command line using absolute path (same as CMD)
-    /usr/bin/python3 -m uvicorn --version && \
-    # Show where packages are installed
-    /usr/bin/python3 -c "import site; print('Site packages:', site.getsitepackages())" && \
-    # Show Python path to debug if needed
-    /usr/bin/python3 -c "import sys; print('Python executable:', sys.executable); print('Python paths:', sys.path)" && \
-    # Verify the uvicorn module can be found (critical check)
-    /usr/bin/python3 -c "import sys; import importlib.util; spec = importlib.util.find_spec('uvicorn'); print('uvicorn module spec:', spec.origin if spec else 'NOT FOUND'); assert spec is not None, 'uvicorn module not found!'" && \
+# Create virtual environment and install dependencies (EXACTLY like setup.sh/start.sh)
+# This is the key difference - bare-metal uses venv, Docker should too
+RUN uv venv /app/.venv && \
+    # Install IndexTTS into the venv
+    cd /app/index-tts && \
+    uv pip install --python /app/.venv/bin/python -e . && \
+    # Install wrapper dependencies into the venv
+    cd /app/wrapper && \
+    uv pip install --python /app/.venv/bin/python -e . && \
+    # Verify uvicorn is installed in the venv
+    /app/.venv/bin/python -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
+    /app/.venv/bin/python -c "import fastapi; print('✓ fastapi installed')" && \
+    /app/.venv/bin/python -m uvicorn --version && \
     # Clean up
     uv pip cache purge 2>/dev/null || true
 
@@ -227,5 +224,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Run the API
-# Use absolute path to python3 and verify uvicorn is available before starting
-CMD ["/usr/bin/python3", "-m", "uvicorn", "indextts_fastapi.api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use venv Python (same as start.sh: "$VENV_PYTHON" -m indextts_fastapi.api)
+CMD ["/app/.venv/bin/python", "-m", "indextts_fastapi.api"]
