@@ -69,6 +69,7 @@ FROM builder-base AS indextts-install
 ENV PATH="/root/.local/bin:/root/.cargo/bin:/usr/local/bin:$PATH"
 
 # Clone IndexTTS repository
+# Note: This step is cached unless the repo URL changes
 ARG INDEXTTS_REPO_URL=https://github.com/index-tts/index-tts.git
 ARG INDEXTTS_REPO_PATH=/app/index-tts
 
@@ -187,31 +188,34 @@ ENV PATH="/root/.local/bin:/usr/local/bin:$PATH"
 # Set Python path to include IndexTTS and ensure dist-packages is in Python's search path
 ENV PYTHONPATH="/app/index-tts:/usr/local/lib/python3.10/dist-packages:/usr/local/lib/python3.10/site-packages:$PYTHONPATH"
 
-# Copy wrapper code
+WORKDIR /app/wrapper
+
+# Create virtual environment and install stable dependencies FIRST (for better caching)
+# This layer will be cached unless Python or dependency files change
+RUN uv venv /app/.venv && \
+    # Install IndexTTS into the venv (this is stable, rarely changes)
+    cd /app/index-tts && \
+    uv pip install --python /app/.venv/bin/python -e . && \
+    # Install flash-attention for acceleration support (requires compilation)
+    # This is expensive but stable - cache it separately
+    # Set MAX_JOBS to avoid OOM during compilation, use ninja for faster builds
+    MAX_JOBS=4 uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
+    # Verify flash-attention installation (fail build if it doesn't work)
+    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed successfully')" || \
+    (echo "ERROR: flash-attention installation or import failed" && exit 1)
+
+# Copy wrapper code AFTER installing stable dependencies
+# This way code changes don't invalidate the expensive flash-attention compilation
 COPY --chown=root:root pyproject.toml /app/wrapper/
 COPY --chown=root:root README.md /app/wrapper/
 COPY --chown=root:root indextts_fastapi/ /app/wrapper/indextts_fastapi/
 # Copy voice_mappings.json (optional - will be skipped if not in build context due to .dockerignore)
 COPY --chown=root:root voice_mappings.json /app/wrapper/voice_mappings.json
 
-WORKDIR /app/wrapper
-
-# Create virtual environment and install dependencies (EXACTLY like setup.sh/start.sh)
-# This is the key difference - bare-metal uses venv, Docker should too
-RUN uv venv /app/.venv && \
-    # Install IndexTTS into the venv
-    cd /app/index-tts && \
+# Install wrapper dependencies (this changes when code changes, but is fast)
+RUN cd /app/wrapper && \
     uv pip install --python /app/.venv/bin/python -e . && \
-    # Install wrapper dependencies into the venv
-    cd /app/wrapper && \
-    uv pip install --python /app/.venv/bin/python -e . && \
-    # Install flash-attention for acceleration support (requires compilation)
-    # Set MAX_JOBS to avoid OOM during compilation, use ninja for faster builds
-    MAX_JOBS=4 uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
-    # Verify flash-attention installation (fail build if it doesn't work)
-    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed successfully')" || \
-    (echo "ERROR: flash-attention installation or import failed" && exit 1) && \
-    # Verify other installations
+    # Verify installations
     /app/.venv/bin/python -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
     /app/.venv/bin/python -c "import fastapi; print('✓ fastapi installed')" && \
     /app/.venv/bin/python -m uvicorn --version && \
