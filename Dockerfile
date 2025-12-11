@@ -191,11 +191,11 @@ RUN uv venv /app/.venv && \
     cd /app/index-tts && \
     uv pip install --python /app/.venv/bin/python -e . && \
     # Install flash-attention from pre-built wheel (much faster than compiling)
-    # Using v2.8.3 wheel for CUDA 12.x and Python 3.10, PyTorch 2.5
+    # Using v2.8.3 wheel for CUDA 12.x and Python 3.10, PyTorch 2.8
     # Note: cu12 wheels work with CUDA 12.x (including 12.8)
     echo ">> Installing flash-attention from pre-built wheel..." && \
     uv pip install --python /app/.venv/bin/python \
-        https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86_64.whl && \
+        https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp310-cp310-linux_x86_64.whl && \
     /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention v2.8.3 installed successfully')"
 
 # Copy wrapper code AFTER installing stable dependencies
