@@ -132,19 +132,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1
 
 # Install only runtime dependencies (minimal)
+# Note: uv will be copied from builder stage, so we don't need pip
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
     python3.10-minimal \
-    python3-pip \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
-    # Verify python3 and pip are available
-    python3 --version && \
-    python3 -m pip --version
+    # Verify python3 is available
+    python3 --version
 
 # Set working directory
 WORKDIR /app
@@ -157,28 +156,27 @@ FROM runtime-base AS runtime
 # Copy IndexTTS installation (without .git and unnecessary files)
 COPY --from=indextts-install --chown=root:root /app/index-tts /app/index-tts
 
+# Copy uv from builder stage to runtime (following setup.sh/start.sh approach)
+COPY --from=builder-base --chown=root:root /root/.local/bin/uv /usr/local/bin/uv
+COPY --from=builder-base --chown=root:root /root/.local/bin/uvx /usr/local/bin/uvx
+
 # Copy Python packages from builder stages
 # uv pip install --system installs to /usr/local/lib/python3.10/dist-packages/ (Ubuntu/Debian)
-# Create target directories first
-RUN mkdir -p /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/site-packages /root/.local/bin
+# Create target directories first and make uv executable
+RUN mkdir -p /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/site-packages && \
+    chmod +x /usr/local/bin/uv && \
+    (chmod +x /usr/local/bin/uvx 2>/dev/null || true) && \
+    uv --version
 
 # Copy packages from system Python location (where --system installs)
 COPY --from=indextts-install --chown=root:root /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
 COPY --from=wrapper-install --chown=root:root /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
 
-# Set PATH to include .local/bin
-ENV PATH="/root/.local/bin:$PATH"
+# Set PATH to include uv location
+ENV PATH="/root/.local/bin:/usr/local/bin:$PATH"
 
 # Set Python path to include IndexTTS and ensure dist-packages is in Python's search path
 ENV PYTHONPATH="/app/index-tts:/usr/local/lib/python3.10/dist-packages:/usr/local/lib/python3.10/site-packages:$PYTHONPATH"
-
-# Verify packages are accessible (this will fail the build if uvicorn is missing, helping us debug)
-RUN python3 -c "import sys; print('Python executable:', sys.executable); print('Python version:', sys.version); print('Python path:', sys.path)" && \
-    python3 -c "import uvicorn; print('✓ uvicorn found:', uvicorn.__version__)" && \
-    python3 -c "import fastapi; print('✓ fastapi found')" || \
-    (echo "ERROR: Required packages not found. Checking installed packages..." && \
-     ls -la /usr/local/lib/python3.10/dist-packages/ | head -20 && \
-     exit 1)
 
 # Copy wrapper code
 COPY --chown=root:root pyproject.toml /app/wrapper/
@@ -188,12 +186,14 @@ COPY --chown=root:root voice_mappings.json /app/wrapper/voice_mappings.json
 
 WORKDIR /app/wrapper
 
-# Install wrapper dependencies directly in runtime to ensure they're accessible
-# This ensures uvicorn and other dependencies are available even if copying from builder failed
-RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    python3 -m pip install --no-cache-dir -e . && \
+# Install wrapper dependencies using uv (following setup.sh/start.sh approach)
+# This ensures consistency with the scripts and that uvicorn is available
+RUN uv pip install --system -e . && \
+    # Verify uvicorn is installed (same check as start.sh)
     python3 -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
-    python3 -c "import fastapi; print('✓ fastapi installed')"
+    python3 -c "import fastapi; print('✓ fastapi installed')" && \
+    # Clean up
+    uv pip cache purge 2>/dev/null || true
 
 # Create checkpoints directory (will be mounted or auto-downloaded)
 RUN mkdir -p /app/checkpoints
