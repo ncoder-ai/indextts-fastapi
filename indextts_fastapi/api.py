@@ -105,16 +105,12 @@ def discover_voice_files() -> dict:
     Dynamically discover all available voice files in configured directories.
     
     Returns:
-        dict: Mapping of voice names to file paths
+        dict: Mapping of voice names (filename without extension) to absolute file paths
     """
     voices = {}
-    
-    # Start with preset mappings
-    voices.update(OPENAI_VOICE_MAP)
-    
-    # Scan configured directories
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
+    # Scan configured directories
     for directory in VOICE_DIRECTORIES:
         # Resolve directory path - try project root first, then index-tts
         if not os.path.isabs(directory):
@@ -132,29 +128,33 @@ def discover_voice_files() -> dict:
         elif not os.path.exists(directory):
             continue
         
-        for filename in os.listdir(directory):
-            file_path = os.path.join(directory, filename)
-            
-            # Skip if not a file or not an audio file
-            if not os.path.isfile(file_path):
-                continue
-            
-            # Check if it's an audio file
-            _, ext = os.path.splitext(filename.lower())
-            if ext not in AUDIO_EXTENSIONS:
-                continue
-            
-            # Skip emotion reference files
-            if "emo_" in filename.lower():
-                continue
-            
-            # Create voice name from filename (without extension)
-            voice_name = os.path.splitext(filename)[0]
-            
-            # Use filename as key, or a cleaned version
-            # If it's already in the map, skip to avoid overwriting presets
-            if voice_name not in voices:
-                voices[voice_name] = file_path
+        try:
+            for filename in os.listdir(directory):
+                file_path = os.path.join(directory, filename)
+                
+                # Skip if not a file or not an audio file
+                if not os.path.isfile(file_path):
+                    continue
+                
+                # Check if it's an audio file
+                _, ext = os.path.splitext(filename.lower())
+                if ext not in AUDIO_EXTENSIONS:
+                    continue
+                
+                # Skip emotion reference files
+                if "emo_" in filename.lower():
+                    continue
+                
+                # Create voice name from filename (without extension)
+                voice_name = os.path.splitext(filename)[0]
+                
+                # Store absolute path - first found wins if duplicates exist
+                if voice_name not in voices:
+                    voices[voice_name] = os.path.abspath(file_path)
+        except PermissionError:
+            print(f">> WARNING: Permission denied accessing {directory}")
+        except Exception as e:
+            print(f">> WARNING: Error scanning {directory}: {e}")
     
     return voices
 
@@ -164,65 +164,49 @@ def get_voice_file(voice_identifier: str) -> Optional[str]:
     Get voice file path from identifier.
     
     Supports:
-    - Preset names (e.g., "alloy", "echo")
-    - Voice names from discovered files (e.g., "voice_01")
+    - Alias names from OPENAI_VOICE_MAP (e.g., "alloy", "echo") - these resolve to discovered files
+    - Voice names from discovered files (e.g., "voice_01", "voice_12")
     - Direct file paths (absolute or relative)
     
     Args:
         voice_identifier: Voice name or file path
         
     Returns:
-        str: Path to voice file, or None if not found
+        str: Absolute path to voice file, or None if not found
     """
-    # First check preset mappings
-    if voice_identifier in OPENAI_VOICE_MAP:
-        voice_path = OPENAI_VOICE_MAP[voice_identifier]
-        # Resolve relative paths
-        if not os.path.isabs(voice_path):
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            
-            # Priority 1: Try project root first (default location)
-            full_path = os.path.join(project_root, voice_path)
-            if os.path.exists(full_path):
-                return full_path
-            
-            # Priority 2: Try current working directory
-            cwd_path = os.path.join(os.getcwd(), voice_path)
-            if os.path.exists(cwd_path):
-                return os.path.abspath(cwd_path)
-            
-            # Priority 3: Try index-tts directory (fallback for backward compatibility)
-            index_tts_path = os.path.join(project_root, "index-tts", voice_path)
-            if os.path.exists(index_tts_path):
-                return index_tts_path
-        elif os.path.exists(voice_path):
-            return voice_path
-        return None
-    
-    # Check discovered voices
+    # Get all discovered voice files (source of truth - these are absolute paths)
     discovered = discover_voice_files()
+    
+    # First, check if it's an alias in OPENAI_VOICE_MAP (e.g., "alloy" -> "examples/voice_01.wav")
+    if voice_identifier in OPENAI_VOICE_MAP:
+        mapped_path = OPENAI_VOICE_MAP[voice_identifier]
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # Resolve the mapped path to absolute
+        if os.path.isabs(mapped_path):
+            resolved_path = mapped_path
+        else:
+            # Try multiple locations to find the file
+            resolved_path = None
+            for base_dir in [project_root, os.getcwd(), os.path.join(project_root, "index-tts")]:
+                candidate = os.path.join(base_dir, mapped_path)
+                if os.path.exists(candidate):
+                    resolved_path = os.path.abspath(candidate)
+                    break
+        
+        # Find which discovered voice corresponds to this file (by matching absolute paths)
+        if resolved_path and os.path.exists(resolved_path):
+            for voice_path in discovered.values():
+                if os.path.abspath(voice_path) == os.path.abspath(resolved_path):
+                    return voice_path
+            # If not found in discovered, but file exists, use it directly
+            return resolved_path
+    
+    # Check if it's a discovered voice name (e.g., "voice_12")
     if voice_identifier in discovered:
         voice_path = discovered[voice_identifier]
         if os.path.exists(voice_path):
             return voice_path
-        # Try to resolve relative paths
-        if not os.path.isabs(voice_path):
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            
-            # Priority 1: Try project root first
-            full_path = os.path.join(project_root, voice_path)
-            if os.path.exists(full_path):
-                return full_path
-            
-            # Priority 2: Try current working directory
-            cwd_path = os.path.join(os.getcwd(), voice_path)
-            if os.path.exists(cwd_path):
-                return os.path.abspath(cwd_path)
-            
-            # Priority 3: Try index-tts directory (fallback)
-            index_tts_path = os.path.join(project_root, "index-tts", voice_path)
-            if os.path.exists(index_tts_path):
-                return index_tts_path
     
     # Check if it's a direct file path
     if os.path.exists(voice_identifier):
@@ -237,12 +221,12 @@ def get_voice_file(voice_identifier: str) -> Optional[str]:
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     project_path = os.path.join(project_root, voice_identifier)
     if os.path.exists(project_path):
-        return project_path
+        return os.path.abspath(project_path)
     
     # Check relative to index-tts
     index_tts_path = os.path.join(project_root, "index-tts", voice_identifier)
     if os.path.exists(index_tts_path):
-        return index_tts_path
+        return os.path.abspath(index_tts_path)
     
     return None
 
@@ -838,26 +822,26 @@ async def list_voices():
     """
     List all available voices
     
-    Returns all discovered voice files including:
-    - Preset OpenAI-compatible voices (alloy, echo, etc.)
-    - Automatically discovered voices from configured directories
-    - Shows both preset and custom voices
+    Returns all discovered voice files from configured directories.
+    Aliases (alloy, echo, etc.) work for lookup but are not listed separately.
     """
     discovered = discover_voice_files()
     voices_list = []
     
-    # Process all discovered voices (which already includes OPENAI_VOICE_MAP)
-    # Mark presets correctly for voices that are in OPENAI_VOICE_MAP
+    # List all discovered voices (source of truth)
     for voice_id, file_path in discovered.items():
-        # Check if this is a preset (from JSON) or dynamically discovered
-        is_preset = is_preset_voice(voice_id) if voice_id in OPENAI_VOICE_MAP else False
         voice_name = os.path.splitext(os.path.basename(file_path))[0]
+        # Check if this voice has an alias in OPENAI_VOICE_MAP
+        is_preset = is_preset_voice(voice_id) if voice_id in OPENAI_VOICE_MAP else False
         voices_list.append(VoiceInfo(
             id=voice_id,
             name=voice_name,
             file_path=file_path,
             is_preset=is_preset
         ))
+    
+    # Sort by voice ID for consistent output
+    voices_list.sort(key=lambda v: v.id)
     
     return VoicesResponse(data=voices_list)
 
@@ -869,12 +853,12 @@ async def list_voices_audio():
     
     This endpoint is under /v1/audio/ to match OpenAI API structure.
     Returns a simplified format with just id and name for better compatibility.
+    Lists all discovered voices. Aliases (alloy, echo, etc.) work for lookup.
     """
     discovered = discover_voice_files()
     voices_list = []
     
-    # Use discovered voices (which already includes OPENAI_VOICE_MAP)
-    # Extract name from file path (filename without extension)
+    # List all discovered voices (source of truth)
     for voice_id, file_path in discovered.items():
         voice_name = os.path.splitext(os.path.basename(file_path))[0]
         voices_list.append(SimpleVoiceInfo(
