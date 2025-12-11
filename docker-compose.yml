@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: indextts-fastapi
     ports:
-      - "8000:8000"
+      - "${INDEXTTS_PORT:-9877}:8000"
     volumes:
       # Mount checkpoints directory for persistence
       - ./checkpoints:/app/checkpoints
