@@ -126,26 +126,22 @@ RUN uv pip install --system --break-system-packages -e . && \
     rm -rf /tmp/* /var/tmp/*
 
 # ============================================================================
-# Stage 4: Runtime base - use CUDA devel image for flash-attention compilation
+# Stage 4: Runtime base - using runtime image (pre-built wheel doesn't need devel)
 # ============================================================================
-FROM nvidia/cuda:12.8.0-devel-ubuntu22.04 AS runtime-base
+FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04 AS runtime-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install runtime and build dependencies for flash-attention
+# Install only runtime dependencies (no build tools needed for pre-built wheel)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
     python3.10-minimal \
-    python3.10-dev \
     curl \
     ca-certificates \
-    build-essential \
-    ninja-build \
-    git \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
@@ -194,12 +190,13 @@ RUN uv venv /app/.venv && \
     # Install IndexTTS into the venv (this is stable, rarely changes)
     cd /app/index-tts && \
     uv pip install --python /app/.venv/bin/python -e . && \
-    # Install flash-attention for acceleration support (requires CUDA devel)
-    # This is expensive but stable - cache it separately
-    # Set MAX_JOBS to avoid OOM during compilation, use ninja for faster builds
-    echo ">> Installing flash-attention (this will take 10-30 minutes)..." && \
-    MAX_JOBS=4 FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
-    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed successfully')"
+    # Install flash-attention from pre-built wheel (much faster than compiling)
+    # Using v2.8.3 wheel for CUDA 12.x and Python 3.10, PyTorch 2.5
+    # Note: cu12 wheels work with CUDA 12.x (including 12.8)
+    echo ">> Installing flash-attention from pre-built wheel..." && \
+    uv pip install --python /app/.venv/bin/python \
+        https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86_64.whl && \
+    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention v2.8.3 installed successfully')"
 
 # Copy wrapper code AFTER installing stable dependencies
 # This way code changes don't invalidate the expensive flash-attention compilation
@@ -217,7 +214,7 @@ RUN cd /app/wrapper && \
     /app/.venv/bin/python -c "import fastapi; print('✓ fastapi installed')" && \
     /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention available')" && \
     /app/.venv/bin/python -m uvicorn --version && \
-    # Clean up build artifacts but keep CUDA devel tools (needed for flash-attention runtime)
+    # Clean up
     uv pip cache purge 2>/dev/null || true && \
     rm -rf /tmp/* /var/tmp/*
 
