@@ -169,6 +169,7 @@ RUN mkdir -p /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/s
     uv --version
 
 # Copy packages from system Python location (where --system installs)
+# Note: We also install in runtime, but copying ensures IndexTTS dependencies are available
 COPY --from=indextts-install --chown=root:root /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
 COPY --from=wrapper-install --chown=root:root /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
 
@@ -188,10 +189,19 @@ WORKDIR /app/wrapper
 
 # Install wrapper dependencies using uv (following setup.sh/start.sh approach)
 # This ensures consistency with the scripts and that uvicorn is available
+# We install here even though we copied packages, to ensure everything is fresh and working
 RUN uv pip install --system -e . && \
-    # Verify uvicorn is installed (same check as start.sh)
-    python3 -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
-    python3 -c "import fastapi; print('✓ fastapi installed')" && \
+    # Verify uvicorn is installed and show where it's located
+    /usr/bin/python3 -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__); print('Location:', uvicorn.__file__)" && \
+    /usr/bin/python3 -c "import fastapi; print('✓ fastapi installed')" && \
+    # Verify uvicorn is accessible via command line using absolute path (same as CMD)
+    /usr/bin/python3 -m uvicorn --version && \
+    # Show where packages are installed
+    /usr/bin/python3 -c "import site; print('Site packages:', site.getsitepackages())" && \
+    # Show Python path to debug if needed
+    /usr/bin/python3 -c "import sys; print('Python executable:', sys.executable); print('Python paths:', sys.path)" && \
+    # Verify the uvicorn module can be found (critical check)
+    /usr/bin/python3 -c "import sys; import importlib.util; spec = importlib.util.find_spec('uvicorn'); print('uvicorn module spec:', spec.origin if spec else 'NOT FOUND'); assert spec is not None, 'uvicorn module not found!'" && \
     # Clean up
     uv pip cache purge 2>/dev/null || true
 
@@ -214,4 +224,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Run the API
-CMD ["python3", "-m", "uvicorn", "indextts_fastapi.api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use absolute path to python3 and verify uvicorn is available before starting
+CMD ["/usr/bin/python3", "-m", "uvicorn", "indextts_fastapi.api:app", "--host", "0.0.0.0", "--port", "8000"]
