@@ -112,25 +112,35 @@ def discover_voice_files() -> dict:
     
     # Scan configured directories
     for directory in VOICE_DIRECTORIES:
-        # Resolve directory path - try project root first, then index-tts
-        if not os.path.isabs(directory):
-            # Try project root first (default)
-            full_dir = os.path.join(project_root, directory)
-            if not os.path.exists(full_dir):
-                # Fallback to index-tts directory
-                full_dir = os.path.join(project_root, "index-tts", directory)
-                if not os.path.exists(full_dir):
-                    # Try current working directory
-                    full_dir = os.path.join(os.getcwd(), directory)
-                    if not os.path.exists(full_dir):
-                        continue
-            directory = full_dir
-        elif not os.path.exists(directory):
+        # Resolve directory path - try multiple locations
+        resolved_dir = None
+        
+        if os.path.isabs(directory):
+            # Already absolute, check if exists
+            if os.path.exists(directory):
+                resolved_dir = directory
+        else:
+            # Try multiple locations in order of preference
+            candidates = [
+                os.path.join(project_root, directory),  # Project root (most common)
+                os.path.join(os.getcwd(), directory),    # Current working directory
+                os.path.join(project_root, "index-tts", directory),  # Fallback
+                directory,  # Try as-is (might be relative to cwd)
+            ]
+            
+            for candidate in candidates:
+                if os.path.exists(candidate) and os.path.isdir(candidate):
+                    resolved_dir = os.path.abspath(candidate)
+                    break
+        
+        if not resolved_dir:
+            print(f">> WARNING: Voice directory '{directory}' not found. Tried: {candidates if not os.path.isabs(directory) else [directory]}")
             continue
         
         try:
-            for filename in os.listdir(directory):
-                file_path = os.path.join(directory, filename)
+            files_found = 0
+            for filename in os.listdir(resolved_dir):
+                file_path = os.path.join(resolved_dir, filename)
                 
                 # Skip if not a file or not an audio file
                 if not os.path.isfile(file_path):
@@ -151,10 +161,17 @@ def discover_voice_files() -> dict:
                 # Store absolute path - first found wins if duplicates exist
                 if voice_name not in voices:
                     voices[voice_name] = os.path.abspath(file_path)
+                    files_found += 1
+            
+            if files_found > 0:
+                print(f">> Discovered {files_found} voice file(s) in {resolved_dir}")
         except PermissionError:
-            print(f">> WARNING: Permission denied accessing {directory}")
+            print(f">> WARNING: Permission denied accessing {resolved_dir}")
         except Exception as e:
-            print(f">> WARNING: Error scanning {directory}: {e}")
+            print(f">> WARNING: Error scanning {resolved_dir}: {e}")
+    
+    if not voices:
+        print(f">> WARNING: No voice files discovered in directories: {VOICE_DIRECTORIES}")
     
     return voices
 
@@ -822,23 +839,48 @@ async def list_voices():
     """
     List all available voices
     
-    Returns all discovered voice files from configured directories.
-    Aliases (alloy, echo, etc.) work for lookup but are not listed separately.
+    Returns discovered voices and aliases from voice_mappings.json.
     """
     discovered = discover_voice_files()
     voices_list = []
+    added_files = set()  # Track which files we've added (by absolute path)
     
-    # List all discovered voices (source of truth)
-    for voice_id, file_path in discovered.items():
-        voice_name = os.path.splitext(os.path.basename(file_path))[0]
-        # Check if this voice has an alias in OPENAI_VOICE_MAP
-        is_preset = is_preset_voice(voice_id) if voice_id in OPENAI_VOICE_MAP else False
+    # First, add aliases from OPENAI_VOICE_MAP
+    for alias_id, mapped_path in OPENAI_VOICE_MAP.items():
+        # Try to resolve the mapped path
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        resolved_path = None
+        
+        if os.path.isabs(mapped_path):
+            resolved_path = mapped_path if os.path.exists(mapped_path) else None
+        else:
+            for base_dir in [project_root, os.getcwd(), os.path.join(project_root, "index-tts")]:
+                candidate = os.path.join(base_dir, mapped_path)
+                if os.path.exists(candidate):
+                    resolved_path = os.path.abspath(candidate)
+                    break
+        
+        voice_name = os.path.splitext(os.path.basename(mapped_path))[0]
         voices_list.append(VoiceInfo(
-            id=voice_id,
+            id=alias_id,
             name=voice_name,
-            file_path=file_path,
-            is_preset=is_preset
+            file_path=resolved_path if resolved_path else mapped_path,  # Use resolved path if found, else relative
+            is_preset=True
         ))
+        if resolved_path:
+            added_files.add(os.path.abspath(resolved_path))
+    
+    # Then add discovered voices that aren't already in the mapping
+    for voice_id, file_path in discovered.items():
+        abs_path = os.path.abspath(file_path)
+        if abs_path not in added_files:
+            voice_name = os.path.splitext(os.path.basename(file_path))[0]
+            voices_list.append(VoiceInfo(
+                id=voice_id,
+                name=voice_name,
+                file_path=file_path,
+                is_preset=False
+            ))
     
     # Sort by voice ID for consistent output
     voices_list.sort(key=lambda v: v.id)
@@ -853,18 +895,52 @@ async def list_voices_audio():
     
     This endpoint is under /v1/audio/ to match OpenAI API structure.
     Returns a simplified format with just id and name for better compatibility.
-    Lists all discovered voices. Aliases (alloy, echo, etc.) work for lookup.
+    Lists discovered voices and aliases from voice_mappings.json.
     """
     discovered = discover_voice_files()
     voices_list = []
+    added_files = set()  # Track which files we've added (by absolute path)
     
-    # List all discovered voices (source of truth)
+    # First, add aliases from OPENAI_VOICE_MAP (these are the known voices)
+    for alias_id, mapped_path in OPENAI_VOICE_MAP.items():
+        # Try to resolve the mapped path to see if the file exists
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        resolved_path = None
+        
+        if os.path.isabs(mapped_path):
+            resolved_path = mapped_path if os.path.exists(mapped_path) else None
+        else:
+            for base_dir in [project_root, os.getcwd(), os.path.join(project_root, "index-tts")]:
+                candidate = os.path.join(base_dir, mapped_path)
+                if os.path.exists(candidate):
+                    resolved_path = os.path.abspath(candidate)
+                    break
+        
+        if resolved_path:
+            # Extract voice name from the mapped path
+            voice_name = os.path.splitext(os.path.basename(mapped_path))[0]
+            voices_list.append(SimpleVoiceInfo(
+                id=alias_id,
+                name=voice_name
+            ))
+            added_files.add(os.path.abspath(resolved_path))
+        else:
+            # File doesn't exist yet, but include the alias anyway (file might be added later)
+            voice_name = os.path.splitext(os.path.basename(mapped_path))[0]
+            voices_list.append(SimpleVoiceInfo(
+                id=alias_id,
+                name=voice_name
+            ))
+    
+    # Then add discovered voices that aren't already in the mapping
     for voice_id, file_path in discovered.items():
-        voice_name = os.path.splitext(os.path.basename(file_path))[0]
-        voices_list.append(SimpleVoiceInfo(
-            id=voice_id,
-            name=voice_name
-        ))
+        abs_path = os.path.abspath(file_path)
+        if abs_path not in added_files:
+            voice_name = os.path.splitext(os.path.basename(file_path))[0]
+            voices_list.append(SimpleVoiceInfo(
+                id=voice_id,
+                name=voice_name
+            ))
     
     # Sort by voice ID for consistent output
     voices_list.sort(key=lambda v: v.id)
