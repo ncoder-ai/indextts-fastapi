@@ -58,8 +58,23 @@ def discover_voice_files() -> dict:
     voices.update(OPENAI_VOICE_MAP)
     
     # Scan configured directories
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
     for directory in VOICE_DIRECTORIES:
-        if not os.path.exists(directory):
+        # Resolve directory path - try project root first, then index-tts
+        if not os.path.isabs(directory):
+            # Try project root first (default)
+            full_dir = os.path.join(project_root, directory)
+            if not os.path.exists(full_dir):
+                # Fallback to index-tts directory
+                full_dir = os.path.join(project_root, "index-tts", directory)
+                if not os.path.exists(full_dir):
+                    # Try current working directory
+                    full_dir = os.path.join(os.getcwd(), directory)
+                    if not os.path.exists(full_dir):
+                        continue
+            directory = full_dir
+        elif not os.path.exists(directory):
             continue
         
         for filename in os.listdir(directory):
@@ -109,18 +124,22 @@ def get_voice_file(voice_identifier: str) -> Optional[str]:
         voice_path = OPENAI_VOICE_MAP[voice_identifier]
         # Resolve relative paths
         if not os.path.isabs(voice_path):
-            # Try project root
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            # Priority 1: Try project root first (default location)
             full_path = os.path.join(project_root, voice_path)
             if os.path.exists(full_path):
                 return full_path
-            # Try index-tts directory
+            
+            # Priority 2: Try current working directory
+            cwd_path = os.path.join(os.getcwd(), voice_path)
+            if os.path.exists(cwd_path):
+                return os.path.abspath(cwd_path)
+            
+            # Priority 3: Try index-tts directory (fallback for backward compatibility)
             index_tts_path = os.path.join(project_root, "index-tts", voice_path)
             if os.path.exists(index_tts_path):
                 return index_tts_path
-            # Try current working directory
-            if os.path.exists(voice_path):
-                return os.path.abspath(voice_path)
         elif os.path.exists(voice_path):
             return voice_path
         return None
@@ -134,9 +153,18 @@ def get_voice_file(voice_identifier: str) -> Optional[str]:
         # Try to resolve relative paths
         if not os.path.isabs(voice_path):
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            # Priority 1: Try project root first
             full_path = os.path.join(project_root, voice_path)
             if os.path.exists(full_path):
                 return full_path
+            
+            # Priority 2: Try current working directory
+            cwd_path = os.path.join(os.getcwd(), voice_path)
+            if os.path.exists(cwd_path):
+                return os.path.abspath(cwd_path)
+            
+            # Priority 3: Try index-tts directory (fallback)
             index_tts_path = os.path.join(project_root, "index-tts", voice_path)
             if os.path.exists(index_tts_path):
                 return index_tts_path
@@ -822,6 +850,17 @@ async def list_voices():
             ))
     
     return VoicesResponse(data=voices_list)
+
+
+@app.get("/v1/audio/voices", response_model=VoicesResponse)
+async def list_voices_audio():
+    """
+    List all available voices (OpenAI-compatible path)
+    
+    This endpoint is under /v1/audio/ to match OpenAI API structure.
+    Same functionality as /v1/voices.
+    """
+    return await list_voices()
 
 
 @app.get("/api/v1/voices", response_model=VoicesResponse)

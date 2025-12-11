@@ -1,0 +1,14 @@
+{
+  "alloy": "examples/voice_01.wav",
+  "echo": "examples/voice_02.wav",
+  "fable": "examples/voice_03.wav",
+  "onyx": "examples/voice_04.wav",
+  "nova": "examples/voice_05.wav",
+  "shimmer": "examples/voice_06.wav",
+  "voice_07": "examples/voice_07.wav",
+  "voice_08": "examples/voice_08.wav",
+  "voice_09": "examples/voice_09.wav",
+  "voice_10": "examples/voice_10.wav",
+  "voice_11": "examples/voice_11.wav",
+  "voice_12": "examples/voice_12.wav"
+}
