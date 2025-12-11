@@ -136,7 +136,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install only runtime dependencies (minimal)
 # Note: uv will be copied from builder stage, so we don't need pip
-# Include build-essential temporarily for flash-attention compilation
+# Include build-essential and ninja temporarily for flash-attention compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
@@ -145,6 +145,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     build-essential \
+    ninja-build \
+    git \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
@@ -204,14 +206,17 @@ RUN uv venv /app/.venv && \
     cd /app/wrapper && \
     uv pip install --python /app/.venv/bin/python -e . && \
     # Install flash-attention for acceleration support (requires compilation)
-    uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
-    # Verify installations
+    # Set MAX_JOBS to avoid OOM during compilation, use ninja for faster builds
+    MAX_JOBS=4 uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
+    # Verify flash-attention installation (fail build if it doesn't work)
+    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed successfully')" || \
+    (echo "ERROR: flash-attention installation or import failed" && exit 1) && \
+    # Verify other installations
     /app/.venv/bin/python -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
     /app/.venv/bin/python -c "import fastapi; print('✓ fastapi installed')" && \
-    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed')" && \
     /app/.venv/bin/python -m uvicorn --version && \
     # Remove build tools to reduce image size (keep only runtime)
-    apt-get remove -y build-essential python3.10-dev && \
+    apt-get remove -y build-essential python3.10-dev ninja-build git && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
