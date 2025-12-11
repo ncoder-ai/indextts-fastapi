@@ -27,9 +27,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
+# Install uv with retry logic and fallback to pip
+RUN set -eux; \
+    UV_INSTALLED=false; \
+    for i in 1 2 3 4 5; do \
+        if curl -LsSf --max-time 30 --retry 3 --retry-delay 2 https://astral.sh/uv/install.sh | sh; then \
+            echo "uv installed successfully on attempt $i"; \
+            UV_INSTALLED=true; \
+            break; \
+        else \
+            echo "Attempt $i failed, retrying in 5 seconds..."; \
+            sleep 5; \
+        fi; \
+    done; \
+    if [ "$UV_INSTALLED" = "false" ]; then \
+        echo "Failed to install uv via install script, using pip as fallback"; \
+        pip install --no-cache-dir uv; \
+        echo "uv installed via pip"; \
+    fi; \
+    # Verify uv is accessible (installs to /root/.local/bin by default)
+    if [ -f /root/.local/bin/uv ]; then \
+        chmod +x /root/.local/bin/uv; \
+        /root/.local/bin/uv --version || true; \
+    elif [ -f /root/.cargo/bin/uv ]; then \
+        chmod +x /root/.cargo/bin/uv; \
+        /root/.cargo/bin/uv --version || true; \
+    elif command -v uv >/dev/null 2>&1; then \
+        uv --version || true; \
+    fi
+ENV PATH="/root/.local/bin:/root/.cargo/bin:/usr/local/bin:$PATH"
 
 # Set working directory
 WORKDIR /app
@@ -39,20 +65,31 @@ WORKDIR /app
 # ============================================================================
 FROM builder-base AS indextts-install
 
+# Ensure PATH includes uv location
+ENV PATH="/root/.local/bin:/root/.cargo/bin:/usr/local/bin:$PATH"
+
 # Clone IndexTTS repository
 ARG INDEXTTS_REPO_URL=https://github.com/index-tts/index-tts.git
 ARG INDEXTTS_REPO_PATH=/app/index-tts
 
-RUN git clone --depth 1 ${INDEXTTS_REPO_URL} ${INDEXTTS_REPO_PATH} && \
-    cd ${INDEXTTS_REPO_PATH} && \
-    git lfs pull && \
+RUN set +e; \
+    # Clone with GIT_LFS_SKIP_SMUDGE to avoid LFS errors during clone
+    GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 ${INDEXTTS_REPO_URL} ${INDEXTTS_REPO_PATH} || \
+    (git clone --depth 1 ${INDEXTTS_REPO_URL} ${INDEXTTS_REPO_PATH} && \
+     cd ${INDEXTTS_REPO_PATH} && \
+     git config lfs.fetchexclude '*' && \
+     git reset --hard HEAD); \
+    cd ${INDEXTTS_REPO_PATH}; \
+    # Try to pull LFS files, but continue if it fails (LFS budget exceeded)
+    git lfs pull || echo "Warning: Git LFS pull failed, continuing without LFS files"; \
     # Remove .git directory to save space
-    rm -rf .git && \
+    rm -rf .git; \
     # Remove unnecessary files
-    find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
-    find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
-    find . -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true && \
-    find . -type f -name "*.pyc" -delete 2>/dev/null || true
+    find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true; \
+    find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true; \
+    find . -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true; \
+    find . -type f -name "*.pyc" -delete 2>/dev/null || true; \
+    set -e
 
 # Install IndexTTS using uv pip (installs to system Python)
 WORKDIR ${INDEXTTS_REPO_PATH}
@@ -65,6 +102,9 @@ RUN uv pip install --system -e . && \
 # Stage 3: Install wrapper dependencies
 # ============================================================================
 FROM builder-base AS wrapper-install
+
+# Ensure PATH includes uv location
+ENV PATH="/root/.local/bin:/root/.cargo/bin:/usr/local/bin:$PATH"
 
 # Copy wrapper code
 COPY --chown=root:root pyproject.toml /app/wrapper/
@@ -109,13 +149,13 @@ FROM runtime-base AS runtime
 COPY --from=indextts-install --chown=root:root /app/index-tts /app/index-tts
 
 # Copy Python packages from builder stages
-# uv pip installs to /root/.local when using --system
-# Merge packages from both stages
-RUN mkdir -p /root/.local/lib/python3.10/site-packages /root/.local/bin
-COPY --from=indextts-install --chown=root:root /root/.local/lib/python3.10/site-packages/ /root/.local/lib/python3.10/site-packages/
-COPY --from=indextts-install --chown=root:root /root/.local/bin/ /root/.local/bin/
-COPY --from=wrapper-install --chown=root:root /root/.local/lib/python3.10/site-packages/ /root/.local/lib/python3.10/site-packages/
-COPY --from=wrapper-install --chown=root:root /root/.local/bin/ /root/.local/bin/
+# uv pip install --system installs to /usr/local/lib/python3.10/dist-packages/ (Ubuntu/Debian)
+# Create target directories and copy packages
+RUN mkdir -p /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/site-packages /root/.local/bin
+
+# Copy packages from system Python location (where --system installs)
+COPY --from=indextts-install --chown=root:root /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
+COPY --from=wrapper-install --chown=root:root /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
 
 # Set PATH to include .local/bin
 ENV PATH="/root/.local/bin:$PATH"
