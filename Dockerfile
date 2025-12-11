@@ -126,18 +126,16 @@ RUN uv pip install --system --break-system-packages -e . && \
     rm -rf /tmp/* /var/tmp/*
 
 # ============================================================================
-# Stage 4: Runtime base - minimal runtime image
+# Stage 4: Runtime base - use CUDA devel image for flash-attention compilation
 # ============================================================================
-FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04 AS runtime-base
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04 AS runtime-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install only runtime dependencies (minimal)
-# Note: uv will be copied from builder stage, so we don't need pip
-# Include build-essential and ninja temporarily for flash-attention compilation
+# Install runtime and build dependencies for flash-attention
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
@@ -196,15 +194,12 @@ RUN uv venv /app/.venv && \
     # Install IndexTTS into the venv (this is stable, rarely changes)
     cd /app/index-tts && \
     uv pip install --python /app/.venv/bin/python -e . && \
-    # Try to install flash-attention for acceleration support (optional)
+    # Install flash-attention for acceleration support (requires CUDA devel)
     # This is expensive but stable - cache it separately
     # Set MAX_JOBS to avoid OOM during compilation, use ninja for faster builds
-    echo ">> Attempting to install flash-attention (this may take 10-30 minutes)..." && \
-    (MAX_JOBS=4 uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
-     /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed successfully')" && \
-     echo "FLASH_ATTN_INSTALLED=true" > /tmp/flash_attn_status) || \
-    (echo "⚠ WARNING: flash-attention installation failed - ACCEL will be disabled" && \
-     echo "FLASH_ATTN_INSTALLED=false" > /tmp/flash_attn_status)
+    echo ">> Installing flash-attention (this will take 10-30 minutes)..." && \
+    MAX_JOBS=4 FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
+    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed successfully')"
 
 # Copy wrapper code AFTER installing stable dependencies
 # This way code changes don't invalidate the expensive flash-attention compilation
@@ -220,14 +215,11 @@ RUN cd /app/wrapper && \
     # Verify installations
     /app/.venv/bin/python -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
     /app/.venv/bin/python -c "import fastapi; print('✓ fastapi installed')" && \
+    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention available')" && \
     /app/.venv/bin/python -m uvicorn --version && \
-    # Remove build tools to reduce image size (keep only runtime)
-    apt-get remove -y build-essential python3.10-dev ninja-build git && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    # Clean up
-    uv pip cache purge 2>/dev/null || true
+    # Clean up build artifacts but keep CUDA devel tools (needed for flash-attention runtime)
+    uv pip cache purge 2>/dev/null || true && \
+    rm -rf /tmp/* /var/tmp/*
 
 # Create checkpoints directory (will be mounted or auto-downloaded)
 RUN mkdir -p /app/checkpoints
