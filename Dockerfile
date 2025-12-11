@@ -136,12 +136,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install only runtime dependencies (minimal)
 # Note: uv will be copied from builder stage, so we don't need pip
+# Include build-essential temporarily for flash-attention compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
     python3.10-minimal \
+    python3.10-dev \
     curl \
     ca-certificates \
+    build-essential \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
@@ -200,10 +203,18 @@ RUN uv venv /app/.venv && \
     # Install wrapper dependencies into the venv
     cd /app/wrapper && \
     uv pip install --python /app/.venv/bin/python -e . && \
-    # Verify uvicorn is installed in the venv
+    # Install flash-attention for acceleration support (requires compilation)
+    uv pip install --python /app/.venv/bin/python flash-attn --no-build-isolation && \
+    # Verify installations
     /app/.venv/bin/python -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
     /app/.venv/bin/python -c "import fastapi; print('✓ fastapi installed')" && \
+    /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention installed')" && \
     /app/.venv/bin/python -m uvicorn --version && \
+    # Remove build tools to reduce image size (keep only runtime)
+    apt-get remove -y build-essential python3.10-dev && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
     # Clean up
     uv pip cache purge 2>/dev/null || true
 
