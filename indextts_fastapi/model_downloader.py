@@ -97,12 +97,17 @@ def download_checkpoints(
         return downloaded_path
         
     except HfHubHTTPError as e:
-        print(f">> ERROR: Failed to download checkpoints: {e}")
+        error_msg = f">> ERROR: Failed to download checkpoints from HuggingFace: {e}"
+        print(error_msg)
         print(f">> Please check your internet connection and HuggingFace access.")
-        raise
+        print(f">> You can try downloading manually with: hf download {repo_id} --local-dir={local_dir}")
+        raise RuntimeError(error_msg) from e
     except Exception as e:
-        print(f">> ERROR: Unexpected error during download: {e}")
-        raise
+        error_msg = f">> ERROR: Unexpected error during download: {e}"
+        print(error_msg)
+        import traceback
+        print(f">> Traceback: {traceback.format_exc()}")
+        raise RuntimeError(error_msg) from e
 
 
 def ensure_checkpoints(
@@ -178,7 +183,11 @@ def ensure_checkpoints(
                 return False
             
     except Exception as e:
-        print(f">> Failed to download checkpoints: {e}")
+        error_msg = f">> Failed to download checkpoints: {e}"
+        print(error_msg)
+        import traceback
+        print(f">> Traceback: {traceback.format_exc()}")
+        print(f">> You can try downloading manually with: hf download {repo_id} --local-dir={model_dir}")
         return False
 
 

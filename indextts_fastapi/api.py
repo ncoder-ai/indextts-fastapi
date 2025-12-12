@@ -44,31 +44,78 @@ async def lifespan(app: FastAPI):
         
         # Ensure checkpoints exist (auto-download if enabled)
         print(">> Checking for IndexTTS2 checkpoints...")
-        checkpoints_ok = ensure_checkpoints(
-            model_dir=model_dir,
-            repo_id=auto_download_config["hf_repo"],
-            auto_download=auto_download_config["auto_download"]
-        )
+        from .model_downloader import check_checkpoints_exist
+        checkpoints_ok, missing_files = check_checkpoints_exist(model_dir)
         
         if not checkpoints_ok:
-            raise FileNotFoundError(
-                f"Required checkpoints are missing in {model_dir}. "
-                f"Please download them manually or enable auto-download."
-            )
+            print(f">> Missing checkpoints: {', '.join(missing_files)}")
+            if auto_download_config["auto_download"]:
+                print(">> Attempting to auto-download missing checkpoints...")
+                checkpoints_ok = ensure_checkpoints(
+                    model_dir=model_dir,
+                    repo_id=auto_download_config["hf_repo"],
+                    auto_download=auto_download_config["auto_download"]
+                )
+                if not checkpoints_ok:
+                    # Re-check to get updated missing files list
+                    _, still_missing = check_checkpoints_exist(model_dir)
+                    raise FileNotFoundError(
+                        f"Required checkpoints are missing in {model_dir}. "
+                        f"Missing files: {', '.join(still_missing)}. "
+                        f"Auto-download may have failed. Please check network connection and HuggingFace access."
+                    )
+            else:
+                raise FileNotFoundError(
+                    f"Required checkpoints are missing in {model_dir}. "
+                    f"Missing files: {', '.join(missing_files)}. "
+                    f"Please download them manually or enable auto-download."
+                )
         
         # Verify config file exists
         if not os.path.exists(cfg_path):
-            raise FileNotFoundError(f"Config file not found: {cfg_path}")
+            raise FileNotFoundError(
+                f"Config file not found: {cfg_path}. "
+                f"Expected location: {os.path.abspath(cfg_path)}. "
+                f"Model directory: {os.path.abspath(model_dir)}"
+            )
         
         # Create model directory if it doesn't exist
         if not os.path.exists(model_dir):
             os.makedirs(model_dir, exist_ok=True)
         
+        # Verify all required files exist before attempting to load
+        print(f">> Verifying checkpoint files in {model_dir}...")
+        all_exist, missing = check_checkpoints_exist(model_dir)
+        if not all_exist:
+            raise FileNotFoundError(
+                f"Cannot load model: missing required files: {', '.join(missing)}. "
+                f"Model directory: {os.path.abspath(model_dir)}"
+            )
+        
         print(f">> Loading IndexTTS2 model from {model_dir}...")
-        tts_model = IndexTTS2(**model_config)
-        print(">> Model loaded successfully!")
+        print(f">> Config path: {os.path.abspath(cfg_path)}")
+        try:
+            tts_model = IndexTTS2(**model_config)
+            print(">> Model loaded successfully!")
+        except FileNotFoundError as e:
+            error_msg = f"FileNotFoundError during model initialization: {e}"
+            print(f">> {error_msg}")
+            print(f">> Model directory contents: {os.listdir(model_dir) if os.path.exists(model_dir) else 'Directory does not exist'}")
+            print(f">> Config file exists: {os.path.exists(cfg_path)}")
+            raise FileNotFoundError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Error during model initialization: {e}"
+            print(f">> {error_msg}")
+            import traceback
+            print(f">> Traceback: {traceback.format_exc()}")
+            raise RuntimeError(error_msg) from e
+    except FileNotFoundError:
+        # Re-raise FileNotFoundError as-is with better context
+        raise
     except Exception as e:
         print(f">> ERROR: Failed to load model: {e}")
+        import traceback
+        print(f">> Traceback: {traceback.format_exc()}")
         tts_model = None
         raise
     
