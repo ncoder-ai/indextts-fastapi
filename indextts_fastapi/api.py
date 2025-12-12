@@ -135,8 +135,6 @@ async def lifespan(app: FastAPI):
         print(f">> Config path: {os.path.abspath(cfg_path)}")
         print(f">> Model config: {model_config}")
         
-        # TORCH_CUDA_ARCH_LIST is set at module import time (see __init__.py)
-        # This ensures it's set before any CUDA kernel compilation happens
         if torch.cuda.is_available():
             compute_caps = []
             for i in range(torch.cuda.device_count()):
@@ -147,7 +145,6 @@ async def lifespan(app: FastAPI):
                     compute_caps.append(cap)
             if compute_caps:
                 print(f">> Detected GPU compute capabilities: {', '.join(compute_caps)}")
-            print(f">> TORCH_CUDA_ARCH_LIST={os.getenv('TORCH_CUDA_ARCH_LIST', 'not set')} (set at module import)")
         
         try:
             tts_model = IndexTTS2(**model_config)
@@ -1086,11 +1083,6 @@ async def list_voices_native():
 def main():
     """Main entry point for running the API server"""
     import uvicorn
-    
-    # Ensure TORCH_CUDA_ARCH_LIST is set (should already be set in __init__.py, but set here as fallback)
-    if not os.getenv("TORCH_CUDA_ARCH_LIST"):
-        os.environ["TORCH_CUDA_ARCH_LIST"] = "7.5;8.0;8.6"
-        print(f">> Set TORCH_CUDA_ARCH_LIST={os.environ['TORCH_CUDA_ARCH_LIST']} in main()")
     
     # Get server config from YAML or environment variables
     server_config = get_server_config()

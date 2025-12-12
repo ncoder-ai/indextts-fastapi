@@ -22,6 +22,7 @@ services:
       # For GPU 3: change device_ids to ["3"] below
       # For GPU 0: change device_ids to ["0"] below  
       # For multiple GPUs: change device_ids to ["0", "1", "2", "3"]
+      - NVIDIA_VISIBLE_DEVICES=all  # Make all GPUs visible (filtered by device_ids in deploy section)
       - CUDA_VISIBLE_DEVICES=0  # Always use first visible GPU (set via device_ids)
       
       # Model configuration
@@ -43,7 +44,6 @@ services:
       # HuggingFace settings (optional, for mirroring)
       - HF_ENDPOINT=${HF_ENDPOINT:-https://huggingface.co}
       - HF_HUB_CACHE=/app/checkpoints/hf_cache
-    runtime: nvidia  # Use NVIDIA runtime for GPU access
     deploy:
       resources:
         reservations:

@@ -66,3 +66,4 @@ Partial rebuild (fast) happens when:
 2. **Keep Dockerfile stable** - Put frequently changing files at the end
 3. **Use multi-stage builds** - Already implemented for minimal final image
 4. **Consider pre-built wheels** - Flash-attention wheels exist but may not match CUDA version
+
