@@ -19,10 +19,12 @@ services:
       - INDEXTTS_HOST=0.0.0.0
       
       # GPU/CUDA configuration
-      # To use a specific GPU, set CUDA_VISIBLE_DEVICES (e.g., "0" for GPU 0, "1" for GPU 1, "0,1" for multiple)
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}  # Default: GPU 0, override with env var
-      # NVIDIA_VISIBLE_DEVICES controls which physical GPUs are accessible to the container
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}  # Default: all GPUs, override with env var
+      # IMPORTANT: NVIDIA_VISIBLE_DEVICES must include the GPU you want to use
+      # If you want GPU 3: set NVIDIA_VISIBLE_DEVICES=3, then CUDA_VISIBLE_DEVICES=0 (first visible GPU)
+      # If you want GPU 0: set NVIDIA_VISIBLE_DEVICES=0, then CUDA_VISIBLE_DEVICES=0
+      # For multiple GPUs: NVIDIA_VISIBLE_DEVICES=0,1,2,3 and CUDA_VISIBLE_DEVICES=0,1,2,3
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}  # Physical GPUs accessible to container (default: all)
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}  # Which of the visible GPUs to use (default: first one)
       
       # Model configuration
       - INDEXTTS_MODEL_DIR=/app/checkpoints
@@ -49,8 +51,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              # count: 1 limits to 1 GPU, remove or increase for multiple GPUs
-              # device_ids can specify exact GPU IDs: ["0"], ["1"], ["0","1"], etc.
+              # count: 1 limits to 1 GPU, increase for multiple GPUs
               count: ${GPU_COUNT:-1}  # Default: 1 GPU, override with env var
               capabilities: [gpu]
     restart: unless-stopped
