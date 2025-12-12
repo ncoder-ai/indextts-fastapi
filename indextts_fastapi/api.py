@@ -135,7 +135,66 @@ async def lifespan(app: FastAPI):
         print(f">> Config path: {os.path.abspath(cfg_path)}")
         print(f">> Model config: {model_config}")
         
-        # TORCH_CUDA_ARCH_LIST is set at module import time (see top of file)
+        # Patch BigVGAN's CUDA loader to remove compute_70 (not supported in CUDA 12.8+)
+        # BigVGAN's load.py sets TORCH_CUDA_ARCH_LIST="" and hardcodes compute_70 in extra_cuda_cflags
+        # We need to patch it to prevent clearing TORCH_CUDA_ARCH_LIST and filter out compute_70
+        try:
+            # Ensure TORCH_CUDA_ARCH_LIST is set (BigVGAN's load.py might clear it)
+            if not os.getenv("TORCH_CUDA_ARCH_LIST") or os.getenv("TORCH_CUDA_ARCH_LIST") == "":
+                os.environ["TORCH_CUDA_ARCH_LIST"] = "7.5;8.0;8.6"
+            
+            from indextts.s2mel.modules.bigvgan.alias_free_activation.cuda import load as bigvgan_load
+            
+            # Prevent BigVGAN from clearing TORCH_CUDA_ARCH_LIST
+            # The load.py file sets os.environ["TORCH_CUDA_ARCH_LIST"] = "" at module level
+            # We'll override this by setting it again after import
+            os.environ["TORCH_CUDA_ARCH_LIST"] = "7.5;8.0;8.6"
+            
+            if hasattr(bigvgan_load, '_cpp_extention_load_helper'):
+                original_helper = bigvgan_load._cpp_extention_load_helper
+                
+                def patched_helper(name, sources, extra_cuda_flags):
+                    # Filter out compute_70 flags
+                    filtered_flags = []
+                    skip_next = False
+                    for i, flag in enumerate(extra_cuda_flags):
+                        if skip_next:
+                            skip_next = False
+                            continue
+                        # Skip "-gencode" and "arch=compute_70,code=sm_70" pairs
+                        if flag == "-gencode" and i + 1 < len(extra_cuda_flags):
+                            next_flag = extra_cuda_flags[i + 1]
+                            if "compute_70" in next_flag or "sm_70" in next_flag:
+                                skip_next = True
+                                print(f">> Filtered out compute_70 from BigVGAN CUDA compilation flags")
+                                continue
+                        filtered_flags.append(flag)
+                    
+                    # Ensure TORCH_CUDA_ARCH_LIST is still set
+                    os.environ["TORCH_CUDA_ARCH_LIST"] = "7.5;8.0;8.6"
+                    
+                    # Call original with filtered flags
+                    import pathlib
+                    from torch.utils import cpp_extension
+                    srcpath = pathlib.Path(bigvgan_load.__file__).parent.absolute()
+                    buildpath = srcpath / "build"
+                    
+                    return cpp_extension.load(
+                        name=name,
+                        sources=sources,
+                        build_directory=buildpath,
+                        extra_cflags=["-O3"],
+                        extra_cuda_cflags=["-O3", "--use_fast_math"] + filtered_flags,
+                        verbose=True,
+                    )
+                
+                bigvgan_load._cpp_extention_load_helper = patched_helper
+                print(">> Patched BigVGAN CUDA loader to exclude compute_70")
+        except (ImportError, AttributeError) as e:
+            # BigVGAN module not available yet - that's okay, we'll try when it loads
+            pass
+        
+        # TORCH_CUDA_ARCH_LIST is set at module import time (see __init__.py)
         # This ensures it's set before any CUDA kernel compilation happens
         if torch.cuda.is_available():
             compute_caps = []
