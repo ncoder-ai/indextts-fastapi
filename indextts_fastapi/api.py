@@ -39,6 +39,36 @@ async def lifespan(app: FastAPI):
     
     # Startup
     try:
+        # Early GPU/CUDA check before loading model
+        print(">> ========================================")
+        print(">> GPU/CUDA Detection Check")
+        print(">> ========================================")
+        print(f">> PyTorch version: {torch.__version__}")
+        print(f">> CUDA available in PyTorch build: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f">> ✓ CUDA is available!")
+            print(f">>   - CUDA version: {torch.version.cuda}")
+            print(f">>   - cuDNN version: {torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else 'N/A'}")
+            print(f">>   - GPU count: {torch.cuda.device_count()}")
+            for i in range(torch.cuda.device_count()):
+                print(f">>   - GPU {i}: {torch.cuda.get_device_name(i)}")
+                print(f">>     Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
+        else:
+            print(f">> ✗ WARNING: CUDA is NOT available!")
+            print(f">>   - PyTorch was built with CUDA: {torch.version.cuda is not None}")
+            if torch.version.cuda is None:
+                print(f">>   - ERROR: PyTorch was built without CUDA support!")
+            else:
+                print(f">>   - Possible issues:")
+                print(f">>     1. NVIDIA Container Toolkit not installed on host")
+                print(f">>     2. GPU not accessible from container")
+                print(f">>     3. CUDA_VISIBLE_DEVICES misconfigured")
+                print(f">>     4. Docker runtime not set to 'nvidia'")
+        print(f">> CUDA_VISIBLE_DEVICES: {os.getenv('CUDA_VISIBLE_DEVICES', 'not set')}")
+        print(f">> NVIDIA_VISIBLE_DEVICES: {os.getenv('NVIDIA_VISIBLE_DEVICES', 'not set')}")
+        print(">> ========================================")
+        print()
+        
         # Get configuration
         cfg_path = model_config["cfg_path"]
         model_dir = model_config["model_dir"]
@@ -95,9 +125,20 @@ async def lifespan(app: FastAPI):
         
         print(f">> Loading IndexTTS2 model from {model_dir}...")
         print(f">> Config path: {os.path.abspath(cfg_path)}")
+        print(f">> Model config: {model_config}")
         try:
             tts_model = IndexTTS2(**model_config)
             print(">> Model loaded successfully!")
+            print(f">> Model device: {tts_model.device}")
+            if tts_model.device.type == 'cuda':
+                print(f">> ✓ Model is using GPU: {tts_model.device}")
+            else:
+                print(f">> ✗ WARNING: Model is using {tts_model.device.type} instead of GPU!")
+                if not torch.cuda.is_available():
+                    print(f">>   This is expected if CUDA is not available (see GPU check above)")
+                else:
+                    print(f">>   ERROR: CUDA is available but model is not using it!")
+                    print(f">>   This may indicate an issue with IndexTTS2 model initialization")
         except FileNotFoundError as e:
             error_msg = f"FileNotFoundError during model initialization: {e}"
             print(f">> {error_msg}")

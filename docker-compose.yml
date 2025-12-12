@@ -18,6 +18,10 @@ services:
       - INDEXTTS_PORT=8000  # Internal container port (mapped to host 9877)
       - INDEXTTS_HOST=0.0.0.0
       
+      # GPU/CUDA configuration
+      - CUDA_VISIBLE_DEVICES=0  # Make GPU 0 visible to container
+      - NVIDIA_VISIBLE_DEVICES=all  # Make all NVIDIA devices visible
+      
       # Model configuration
       - INDEXTTS_MODEL_DIR=/app/checkpoints
       - INDEXTTS_CFG_PATH=/app/checkpoints/config.yaml
@@ -37,6 +41,7 @@ services:
       # HuggingFace settings (optional, for mirroring)
       - HF_ENDPOINT=${HF_ENDPOINT:-https://huggingface.co}
       - HF_HUB_CACHE=/app/checkpoints/hf_cache
+    runtime: nvidia  # Use NVIDIA runtime for GPU access
     deploy:
       resources:
         reservations:
