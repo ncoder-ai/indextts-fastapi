@@ -126,9 +126,9 @@ RUN uv pip install --system --break-system-packages -e . && \
     rm -rf /tmp/* /var/tmp/*
 
 # ============================================================================
-# Stage 4: Runtime base - using runtime image (no dev tools needed)
+# Stage 4: Runtime base - using devel image (needed for nvcc/DeepSpeed)
 # ============================================================================
-FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04 AS runtime-base
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04 AS runtime-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -136,8 +136,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1
 
 # Install runtime dependencies + build tools for Triton/flash-attention/DeepSpeed
-# Note: flash-attention uses Triton which compiles kernels at runtime
-# DeepSpeed also builds CUDA ops JIT, requiring nvcc (CUDA toolkit)
+# Note: devel image already includes nvcc, gcc, g++ - just need Python headers and ffmpeg
+# flash-attention uses Triton which compiles kernels at runtime
+# DeepSpeed also builds CUDA ops JIT, requiring nvcc (included in devel image)
 # ffmpeg needed for audio format conversion (MP3, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -147,20 +148,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     curl \
     ca-certificates \
-    gcc \
-    g++ \
     ffmpeg \
-    # Install CUDA toolkit for DeepSpeed (nvcc for JIT compilation)
-    cuda-toolkit-12-8 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
-    # Verify installations
+    # Verify installations (nvcc, gcc, g++ already in devel image)
     python3 --version && \
     gcc --version && \
     g++ --version && \
-    ffmpeg -version | head -1 && \
     nvcc --version | head -1 && \
+    ffmpeg -version | head -1 && \
     python3 -c "import sysconfig; print('Python headers:', sysconfig.get_path('include'))"
 
 # Set working directory
