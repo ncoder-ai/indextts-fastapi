@@ -18,13 +18,11 @@ services:
       - INDEXTTS_PORT=8000  # Internal container port (mapped to host 9877)
       - INDEXTTS_HOST=0.0.0.0
       
-      # GPU/CUDA configuration
-      # IMPORTANT: NVIDIA_VISIBLE_DEVICES must include the GPU you want to use
-      # If you want GPU 3: set NVIDIA_VISIBLE_DEVICES=3, then CUDA_VISIBLE_DEVICES=0 (first visible GPU)
-      # If you want GPU 0: set NVIDIA_VISIBLE_DEVICES=0, then CUDA_VISIBLE_DEVICES=0
-      # For multiple GPUs: NVIDIA_VISIBLE_DEVICES=0,1,2,3 and CUDA_VISIBLE_DEVICES=0,1,2,3
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}  # Physical GPUs accessible to container (default: all)
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}  # Which of the visible GPUs to use (default: first one)
+      # GPU configuration - to use a specific GPU, edit device_ids below
+      # For GPU 3: change device_ids to ["3"] below
+      # For GPU 0: change device_ids to ["0"] below  
+      # For multiple GPUs: change device_ids to ["0", "1", "2", "3"]
+      - CUDA_VISIBLE_DEVICES=0  # Always use first visible GPU (set via device_ids)
       
       # Model configuration
       - INDEXTTS_MODEL_DIR=/app/checkpoints
@@ -51,8 +49,10 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              # count: 1 limits to 1 GPU, increase for multiple GPUs
-              count: ${GPU_COUNT:-1}  # Default: 1 GPU, override with env var
+              # To use GPU 3: change to device_ids: ["3"]
+              # To use GPU 0: change to device_ids: ["0"]
+              # To use multiple GPUs: device_ids: ["0", "1", "2", "3"]
+              device_ids: ["3"]  # <-- EDIT THIS: Change to the GPU number you want (e.g., ["0"], ["1"], ["3"])
               capabilities: [gpu]
     restart: unless-stopped
     healthcheck:
