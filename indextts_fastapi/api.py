@@ -128,14 +128,47 @@ async def lifespan(app: FastAPI):
         print(f">> Loading IndexTTS2 model from {model_dir}...")
         print(f">> Config path: {os.path.abspath(cfg_path)}")
         print(f">> Model config: {model_config}")
+        
+        # Set TORCH_CUDA_ARCH_LIST to avoid compilation errors with CUDA 12.8+
+        # CUDA 12.8+ doesn't support compute_70 (Volta), so we need to specify supported architectures
+        if torch.cuda.is_available() and not os.getenv("TORCH_CUDA_ARCH_LIST"):
+            # Detect GPU compute capabilities and set appropriate architectures
+            # RTX 3090 is Ampere (compute capability 8.6)
+            # CUDA 12.8 supports: 7.5 (Turing), 8.0+ (Ampere and newer)
+            # Exclude 7.0 (Volta) as it's not supported in CUDA 12.8+
+            compute_caps = []
+            for i in range(torch.cuda.device_count()):
+                props = torch.cuda.get_device_properties(i)
+                major, minor = props.major, props.minor
+                cap = f"{major}.{minor}"
+                if cap not in compute_caps:
+                    compute_caps.append(cap)
+            
+            # Always include 8.0 and 8.6 for Ampere (RTX 3090)
+            # Also include 7.5 for Turing compatibility
+            arch_list = "7.5;8.0;8.6"
+            if compute_caps:
+                print(f">> Detected GPU compute capabilities: {', '.join(compute_caps)}")
+            os.environ["TORCH_CUDA_ARCH_LIST"] = arch_list
+            print(f">> Set TORCH_CUDA_ARCH_LIST={arch_list} for CUDA kernel compilation (CUDA 12.8 compatible)")
+        
         try:
             tts_model = IndexTTS2(**model_config)
             print(">> Model loaded successfully!")
             print(f">> Model device: {tts_model.device}")
-            if tts_model.device.type == 'cuda':
-                print(f">> ✓ Model is using GPU: {tts_model.device}")
+            
+            # Handle device - it might be a string or torch.device object
+            device_str = str(tts_model.device)
+            if isinstance(tts_model.device, torch.device):
+                device_type = tts_model.device.type
             else:
-                print(f">> ✗ WARNING: Model is using {tts_model.device.type} instead of GPU!")
+                # If it's a string like "cuda:0", extract the type
+                device_type = device_str.split(':')[0] if ':' in device_str else device_str
+            
+            if device_type == 'cuda':
+                print(f">> ✓ Model is using GPU: {device_str}")
+            else:
+                print(f">> ✗ WARNING: Model is using {device_type} instead of GPU!")
                 if not torch.cuda.is_available():
                     print(f">>   This is expected if CUDA is not available (see GPU check above)")
                 else:
