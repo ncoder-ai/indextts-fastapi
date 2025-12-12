@@ -29,7 +29,7 @@ def get_default_config() -> Dict:
             "cfg_path": "checkpoints/config.yaml",
             "model_dir": "checkpoints",
             "use_fp16": True,
-            "use_cuda_kernel": True,  # Optimized for GPU performance
+            "use_cuda_kernel": False,  # Disabled - custom CUDA kernels causing compilation issues
             "use_deepspeed": True,
             "use_accel": True,  # Optimized for GPU performance (requires flash-attention, installed by setup.sh)
             "use_torch_compile": True,  # Optimized for GPU performance

@@ -33,9 +33,9 @@ services:
       
       # Performance settings (optimized for GPU with flash-attention)
       - INDEXTTS_USE_FP16=true
-      - INDEXTTS_USE_CUDA_KERNEL=true
+      - INDEXTTS_USE_CUDA_KERNEL=false  # Disabled - custom CUDA kernels causing compilation issues
       - INDEXTTS_USE_DEEPSPEED=true
-      - INDEXTTS_USE_ACCEL=true  # Enabled - flash-attention installed with CUDA devel image
+      - INDEXTTS_USE_ACCEL=true  # Enabled - flash-attention installed from pre-built wheel
       - INDEXTTS_USE_TORCH_COMPILE=true
       
       # HuggingFace settings (optional, for mirroring)

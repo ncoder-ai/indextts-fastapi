@@ -126,31 +126,27 @@ RUN uv pip install --system --break-system-packages -e . && \
     rm -rf /tmp/* /var/tmp/*
 
 # ============================================================================
-# Stage 4: Runtime base - using devel image for CUDA kernel compilation
+# Stage 4: Runtime base - using runtime image (no dev tools needed)
 # ============================================================================
-FROM nvidia/cuda:12.8.0-devel-ubuntu22.04 AS runtime-base
+FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04 AS runtime-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install runtime dependencies + build tools for CUDA kernel compilation
+# Install runtime dependencies only (no build tools - custom CUDA kernels disabled)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
-    python3.10-dev \
     python3-pip \
     curl \
     ca-certificates \
-    build-essential \
-    ninja-build \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
-    # Verify python3 and nvcc are available
-    python3 --version && \
-    nvcc --version
+    # Verify python3 is available
+    python3 --version
 
 # Set working directory
 WORKDIR /app
