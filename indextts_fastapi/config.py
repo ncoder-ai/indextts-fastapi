@@ -31,7 +31,7 @@ def get_default_config() -> Dict:
             "use_fp16": True,
             "use_cuda_kernel": True,  # Optimized for GPU performance
             "use_deepspeed": True,
-            "use_accel": True,  # Optimized for GPU performance
+            "use_accel": True,  # Optimized for GPU performance (requires flash-attention, installed by setup.sh)
             "use_torch_compile": True,  # Optimized for GPU performance
         },
         "auto_download": {
@@ -136,6 +136,15 @@ def _deep_merge(base: Dict, override: Dict) -> Dict:
     return result
 
 
+def check_flash_attn_available() -> bool:
+    """Check if flash-attention is available"""
+    try:
+        import flash_attn
+        return True
+    except ImportError:
+        return False
+
+
 def get_model_config() -> Dict:
     """
     Get model configuration from config.yaml, with environment variable overrides.
@@ -148,9 +157,27 @@ def get_model_config() -> Dict:
     - INDEXTTS_USE_DEEPSPEED
     - INDEXTTS_USE_ACCEL
     - INDEXTTS_USE_TORCH_COMPILE
+    
+    Note: If use_accel is True but flash-attention is not available, it will be
+    automatically set to False with a warning.
     """
     config = load_config()
     model_config = config.get("model", {})
+    
+    # Get use_accel value from config/env
+    use_accel_env = os.getenv("INDEXTTS_USE_ACCEL")
+    if use_accel_env is not None:
+        use_accel = use_accel_env.lower() == "true"
+    else:
+        use_accel = model_config.get("use_accel", False)
+    
+    # Check if flash-attention is available if use_accel is requested
+    if use_accel and not check_flash_attn_available():
+        print(">> WARNING: use_accel is enabled but flash-attention is not installed.")
+        print(">>   Disabling use_accel. To enable it, install flash-attention:")
+        print(">>   pip install flash-attn --no-build-isolation")
+        print(">>   Or see: https://github.com/Dao-AILab/flash-attention/releases/")
+        use_accel = False
     
     # Environment variables override YAML values
     return {
@@ -159,7 +186,7 @@ def get_model_config() -> Dict:
         "use_fp16": os.getenv("INDEXTTS_USE_FP16", str(model_config.get("use_fp16", True))).lower() == "true",
         "use_cuda_kernel": os.getenv("INDEXTTS_USE_CUDA_KERNEL", str(model_config.get("use_cuda_kernel", True))).lower() == "true",
         "use_deepspeed": os.getenv("INDEXTTS_USE_DEEPSPEED", str(model_config.get("use_deepspeed", True))).lower() == "true",
-        "use_accel": os.getenv("INDEXTTS_USE_ACCEL", str(model_config.get("use_accel", True))).lower() == "true",
+        "use_accel": use_accel,
         "use_torch_compile": os.getenv("INDEXTTS_USE_TORCH_COMPILE", str(model_config.get("use_torch_compile", True))).lower() == "true",
     }
 

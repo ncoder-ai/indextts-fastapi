@@ -9,7 +9,7 @@ model:
   use_fp16: true              # Reduces VRAM usage and increases inference speed
   use_cuda_kernel: true        # Provides 1.3-1.5x speedup with custom CUDA kernels
   use_deepspeed: true          # Optimization acceleration
-  use_accel: true              # Enables flash-attention for faster attention computation
+  use_accel: true              # Enables flash-attention (installed by setup.sh, auto-disabled if unavailable)
   use_torch_compile: true      # PyTorch 2.0+ compilation optimization
 
 auto_download:
