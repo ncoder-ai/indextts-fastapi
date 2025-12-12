@@ -136,9 +136,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1
 
 # Install runtime dependencies + build tools for Triton/flash-attention/DeepSpeed
-# Note: devel image already includes nvcc, gcc, g++ - just need Python headers and ffmpeg
+# Note: devel image already includes nvcc, gcc, g++ - just need Python headers, ffmpeg, and ninja
 # flash-attention uses Triton which compiles kernels at runtime
-# DeepSpeed also builds CUDA ops JIT, requiring nvcc (included in devel image)
+# DeepSpeed also builds CUDA ops JIT, requiring nvcc (included in devel image) and ninja
 # ffmpeg needed for audio format conversion (MP3, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -149,16 +149,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     ffmpeg \
+    ninja-build \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
+    # Install ninja via pip as well (PyTorch prefers pip version)
+    python3 -m pip install --no-cache-dir ninja && \
     # Verify installations (nvcc, gcc, g++ already in devel image)
     python3 --version && \
     gcc --version && \
     g++ --version && \
     nvcc --version | head -1 && \
+    ninja --version && \
     ffmpeg -version | head -1 && \
-    python3 -c "import sysconfig; print('Python headers:', sysconfig.get_path('include'))"
+    python3 -c "import sysconfig; print('Python headers:', sysconfig.get_path('include'))" && \
+    python3 -c "import ninja; print('✓ ninja Python package available')"
 
 # Set working directory
 WORKDIR /app
@@ -221,6 +226,9 @@ COPY --chown=root:root voice_mappings.json /app/wrapper/voice_mappings.json
 # Install wrapper dependencies (this changes when code changes, but is fast)
 RUN cd /app/wrapper && \
     uv pip install --python /app/.venv/bin/python -e . && \
+    # Install ninja (required by DeepSpeed for C++ extension compilation)
+    echo ">> Installing ninja..." && \
+    uv pip install --python /app/.venv/bin/python ninja && \
     # Install DeepSpeed for optimization support
     echo ">> Installing DeepSpeed..." && \
     uv pip install --python /app/.venv/bin/python deepspeed==0.17.1 && \
