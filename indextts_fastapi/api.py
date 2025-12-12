@@ -10,8 +10,9 @@ from contextlib import asynccontextmanager
 from typing import List, Optional, Literal
 
 import torch
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status, APIRouter
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status, APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field
 
 from indextts.infer_v2 import IndexTTS2
@@ -136,6 +137,40 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+# Exception handler for request validation errors
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors with detailed logging"""
+    body = None
+    try:
+        body = await request.body()
+    except Exception:
+        pass
+    
+    print(f">> [Request Validation Error] Path: {request.url.path}")
+    print(f">> [Request Validation Error] Method: {request.method}")
+    print(f">> [Request Validation Error] Errors: {exc.errors()}")
+    if body:
+        try:
+            import json
+            body_str = body.decode('utf-8')
+            print(f">> [Request Validation Error] Body: {body_str}")
+            try:
+                body_json = json.loads(body_str)
+                print(f">> [Request Validation Error] Parsed body: {body_json}")
+            except:
+                pass
+        except Exception as e:
+            print(f">> [Request Validation Error] Could not decode body: {e}")
+    
+    # Return standard FastAPI validation error response
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()},
+    )
 
 
 def get_app():
@@ -696,35 +731,71 @@ async def openai_audio_speech(request: OpenAITTSRequest):
     response.stream_to_file("output.mp3")
     ```
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Log incoming request details
+    print(f">> [TTS Request] Received request:")
+    print(f">>   - model: {request.model}")
+    print(f">>   - voice: {request.voice}")
+    print(f">>   - input length: {len(request.input) if request.input else 0} chars")
+    print(f">>   - response_format: {request.response_format}")
+    print(f">>   - speed: {request.speed}")
+    
     if tts_model is None:
+        error_msg = "Model not loaded. Please check /health endpoint."
+        print(f">> [TTS Request] ERROR: {error_msg}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model not loaded. Please check /health endpoint.",
+            detail=error_msg,
         )
     
     if not request.input or not request.input.strip():
+        error_msg = "input cannot be empty"
+        print(f">> [TTS Request] ERROR: {error_msg}")
+        print(f">>   - request.input: {repr(request.input)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="input cannot be empty",
+            detail=error_msg,
         )
     
     # Get voice file path (supports preset names, discovered voices, or file paths)
+    print(f">> [TTS Request] Looking up voice: '{request.voice}'")
     voice_file = get_voice_file(request.voice)
     
     if voice_file is None:
+        print(f">> [TTS Request] Voice '{request.voice}' not found, trying default voice: '{DEFAULT_VOICE}'")
         # Try default voice
         voice_file = get_voice_file(DEFAULT_VOICE)
         if voice_file is None:
+            # List available voices for better error message
+            discovered = discover_voice_files()
+            available_voices = list(discovered.keys())
+            error_msg = f"Voice '{request.voice}' not found. Use /v1/voices to list available voices."
+            print(f">> [TTS Request] ERROR: {error_msg}")
+            print(f">>   - Requested voice: '{request.voice}'")
+            print(f">>   - Default voice: '{DEFAULT_VOICE}'")
+            print(f">>   - Available voices: {available_voices}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Voice '{request.voice}' not found. Use /v1/voices to list available voices.",
+                detail=f"{error_msg} Available voices: {', '.join(available_voices) if available_voices else 'none'}",
             )
+        else:
+            print(f">> [TTS Request] Using default voice: '{DEFAULT_VOICE}' -> {voice_file}")
+    else:
+        print(f">> [TTS Request] Found voice: '{request.voice}' -> {voice_file}")
     
     if not os.path.exists(voice_file):
+        error_msg = f"Voice file not found: {voice_file}. Please ensure the voice file exists."
+        print(f">> [TTS Request] ERROR: {error_msg}")
+        print(f">>   - Voice file path: {voice_file}")
+        print(f">>   - File exists: {os.path.exists(voice_file)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Voice file not found: {voice_file}. Please ensure the voice file exists.",
+            detail=error_msg,
         )
+    
+    print(f">> [TTS Request] Voice file verified: {voice_file}")
     
     # Create temporary directory
     temp_dir = tempfile.mkdtemp()
@@ -810,19 +881,28 @@ async def openai_audio_speech(request: OpenAITTSRequest):
         # but the parameter is accepted for compatibility
         
         # Return audio file
+        print(f">> [TTS Request] Successfully generated audio: {output_file}")
         return FileResponse(
             output_file,
             media_type=media_type,
             filename=f"speech.{request.response_format}",
         )
     
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is (they already have proper status codes)
+        raise
     except Exception as e:
         import shutil
         import traceback
         error_msg = str(e) if str(e) else repr(e)
         error_trace = traceback.format_exc()
-        print(f">> ERROR in TTS synthesis: {error_msg}")
-        print(f">> Traceback: {error_trace}")
+        print(f">> [TTS Request] ERROR in TTS synthesis: {error_msg}")
+        print(f">> [TTS Request] Traceback: {error_trace}")
+        print(f">> [TTS Request] Request details:")
+        print(f">>   - model: {request.model}")
+        print(f">>   - voice: {request.voice}")
+        print(f">>   - input length: {len(request.input) if request.input else 0} chars")
+        print(f">>   - response_format: {request.response_format}")
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(
