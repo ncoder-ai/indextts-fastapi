@@ -15,7 +15,7 @@ services:
       - ./examples:/app/examples:ro
     environment:
       # Server configuration
-      - INDEXTTS_PORT=9877  # Internal container port (mapped to host 9877)
+      - INDEXTTS_PORT=8000  # Internal container port (mapped to host 9877)
       - INDEXTTS_HOST=0.0.0.0
       
       # Model configuration
