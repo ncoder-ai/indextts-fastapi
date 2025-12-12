@@ -38,6 +38,60 @@ else
     git lfs pull || echo ">> WARNING: LFS pull failed (examples files may be missing, but API will still work)"
 fi
 
+# Apply patch to BigVGAN load.py to fix CUDA 12.8+ compatibility (remove compute_70)
+echo ">> Applying BigVGAN CUDA 12.8+ compatibility patch..."
+BIGVGAN_LOAD_FILE="$INDEXTTS_REPO_PATH/indextts/s2mel/modules/bigvgan/alias_free_activation/cuda/load.py"
+if [ -f "$BIGVGAN_LOAD_FILE" ]; then
+    # Check if patch is already applied (check if compute_70 is removed)
+    if grep -q "arch=compute_70,code=sm_70" "$BIGVGAN_LOAD_FILE" 2>/dev/null; then
+        echo ">> Patching BigVGAN load.py to remove compute_70 (CUDA 12.8+ compatibility)..."
+        
+        # Use Python to apply the patch reliably
+        python3 - "$BIGVGAN_LOAD_FILE" << 'PYTHON_PATCH'
+import sys
+
+file_path = sys.argv[1]
+
+with open(file_path, 'r') as f:
+    lines = f.readlines()
+
+new_lines = []
+i = 0
+while i < len(lines):
+    line = lines[i]
+    
+    # Patch 1: Comment out TORCH_CUDA_ARCH_LIST clearing
+    if 'os.environ["TORCH_CUDA_ARCH_LIST"] = ""' in line:
+        indent = len(line) - len(line.lstrip())
+        new_lines.append(' ' * indent + '# Let TORCH_CUDA_ARCH_LIST be set by the user or auto-detected (patched for CUDA 12.8+ compatibility)\n')
+        new_lines.append(' ' * indent + '# os.environ["TORCH_CUDA_ARCH_LIST"] = ""\n')
+        i += 1
+        continue
+    
+    # Patch 2: Remove compute_70 line and add comment
+    if 'arch=compute_70,code=sm_70' in line:
+        indent = len(line) - len(line.lstrip())
+        new_lines.append(' ' * indent + '# Removed compute_70 (Volta) - not supported in CUDA 12.8+\n')
+        new_lines.append(' ' * indent + '# Architecture flags will come from TORCH_CUDA_ARCH_LIST or auto-detection\n')
+        i += 1
+        continue
+    
+    new_lines.append(line)
+    i += 1
+
+with open(file_path, 'w') as f:
+    f.writelines(new_lines)
+
+print(">> BigVGAN patch applied successfully")
+PYTHON_PATCH
+    else
+        echo ">> BigVGAN patch already applied (compute_70 already removed)"
+    fi
+else
+    echo ">> WARNING: BigVGAN load.py not found at $BIGVGAN_LOAD_FILE"
+    echo ">> Patch will be applied when the file is available"
+fi
+
 # Check if uv is installed (required)
 if ! command -v uv &> /dev/null; then
     echo "ERROR: uv is not installed. Please install uv first:"
