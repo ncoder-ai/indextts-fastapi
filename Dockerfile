@@ -135,11 +135,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install runtime dependencies + build tools for Triton/flash-attention/DeepSpeed
-# Note: devel image already includes nvcc, gcc, g++ - just need Python headers, ffmpeg, and ninja
-# flash-attention uses Triton which compiles kernels at runtime
-# DeepSpeed also builds CUDA ops JIT, requiring nvcc (included in devel image) and ninja
-# ffmpeg needed for audio format conversion (MP3, etc.)
+# Install runtime dependencies + ALL build tools for Triton/flash-attention/DeepSpeed/PyTorch
+# Complete build toolchain required:
+# - nvcc, gcc, g++: Already in devel image
+# - cmake: Required by DeepSpeed (3.15+) and PyTorch C++ extensions (3.19+)
+# - make: Required for build systems
+# - ninja: Required by PyTorch/DeepSpeed for JIT compilation
+# - Python headers: Required for C++ extensions
+# - ffmpeg: Audio format conversion
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
@@ -150,20 +153,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
     ninja-build \
+    cmake \
+    make \
+    build-essential \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
     # Install ninja via pip as well (PyTorch prefers pip version)
     python3 -m pip install --no-cache-dir ninja && \
-    # Verify installations (nvcc, gcc, g++ already in devel image)
+    # Verify ALL installations (nvcc, gcc, g++ already in devel image)
     python3 --version && \
     gcc --version && \
     g++ --version && \
     nvcc --version | head -1 && \
+    cmake --version | head -1 && \
+    make --version | head -1 && \
     ninja --version && \
     ffmpeg -version | head -1 && \
     python3 -c "import sysconfig; print('Python headers:', sysconfig.get_path('include'))" && \
-    python3 -c "import ninja; print('✓ ninja Python package available')"
+    python3 -c "import ninja; print('✓ ninja Python package available')" && \
+    echo "✓ All build tools verified"
 
 # Set working directory
 WORKDIR /app
