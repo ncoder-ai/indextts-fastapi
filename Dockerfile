@@ -126,27 +126,31 @@ RUN uv pip install --system --break-system-packages -e . && \
     rm -rf /tmp/* /var/tmp/*
 
 # ============================================================================
-# Stage 4: Runtime base - using runtime image (pre-built wheel doesn't need devel)
+# Stage 4: Runtime base - using devel image for CUDA kernel compilation
 # ============================================================================
-FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04 AS runtime-base
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04 AS runtime-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install only runtime dependencies (no build tools needed for pre-built wheel)
+# Install runtime dependencies + build tools for CUDA kernel compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
-    python3.10-minimal \
+    python3.10-dev \
+    python3-pip \
     curl \
     ca-certificates \
+    build-essential \
+    ninja-build \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
-    # Verify python3 is available
-    python3 --version
+    # Verify python3 and nvcc are available
+    python3 --version && \
+    nvcc --version
 
 # Set working directory
 WORKDIR /app
@@ -209,10 +213,16 @@ COPY --chown=root:root voice_mappings.json /app/wrapper/voice_mappings.json
 # Install wrapper dependencies (this changes when code changes, but is fast)
 RUN cd /app/wrapper && \
     uv pip install --python /app/.venv/bin/python -e . && \
+    # Install DeepSpeed for optimization support
+    echo ">> Installing DeepSpeed..." && \
+    uv pip install --python /app/.venv/bin/python deepspeed==0.17.1 || \
+    (echo ">> WARNING: DeepSpeed installation failed, continuing without it" && \
+     uv pip install --python /app/.venv/bin/python deepspeed || true) && \
     # Verify installations
     /app/.venv/bin/python -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
     /app/.venv/bin/python -c "import fastapi; print('✓ fastapi installed')" && \
     /app/.venv/bin/python -c "import flash_attn; print('✓ flash-attention available')" && \
+    /app/.venv/bin/python -c "import deepspeed; print('✓ deepspeed installed:', deepspeed.__version__)" 2>/dev/null || echo ">> WARNING: DeepSpeed not available" && \
     /app/.venv/bin/python -m uvicorn --version && \
     # Clean up
     uv pip cache purge 2>/dev/null || true && \
