@@ -19,8 +19,10 @@ from indextts.infer_v2 import IndexTTS2
 from .config import (
     get_model_config,
     get_auto_download_config,
+    get_voice_config,
+    get_server_config,
+    get_default_voice,
     OPENAI_VOICE_MAP,
-    DEFAULT_VOICE,
     AUDIO_EXTENSIONS,
     is_preset_voice,
 )
@@ -228,8 +230,9 @@ def discover_voice_files() -> dict:
     """
     voices = {}
     
-    # Get voice directory from environment variable or default to "examples"
-    voice_dir = os.getenv("INDEXTTS_VOICE_DIR", "examples")
+    # Get voice directory from config (YAML or env var)
+    voice_config = get_voice_config()
+    voice_dir = voice_config["voice_dir"]
     
     # Resolve to absolute path
     if not os.path.isabs(voice_dir):
@@ -805,9 +808,10 @@ async def openai_audio_speech(request: OpenAITTSRequest):
     voice_file = get_voice_file(request.voice)
     
     if voice_file is None:
-        print(f">> [TTS Request] Voice '{request.voice}' not found, trying default voice: '{DEFAULT_VOICE}'")
+        default_voice = get_default_voice()
+        print(f">> [TTS Request] Voice '{request.voice}' not found, trying default voice: '{default_voice}'")
         # Try default voice
-        voice_file = get_voice_file(DEFAULT_VOICE)
+        voice_file = get_voice_file(default_voice)
         if voice_file is None:
             # List available voices for better error message
             discovered = discover_voice_files()
@@ -815,14 +819,14 @@ async def openai_audio_speech(request: OpenAITTSRequest):
             error_msg = f"Voice '{request.voice}' not found. Use /v1/voices to list available voices."
             print(f">> [TTS Request] ERROR: {error_msg}")
             print(f">>   - Requested voice: '{request.voice}'")
-            print(f">>   - Default voice: '{DEFAULT_VOICE}'")
+            print(f">>   - Default voice: '{default_voice}'")
             print(f">>   - Available voices: {available_voices}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"{error_msg} Available voices: {', '.join(available_voices) if available_voices else 'none'}",
             )
         else:
-            print(f">> [TTS Request] Using default voice: '{DEFAULT_VOICE}' -> {voice_file}")
+            print(f">> [TTS Request] Using default voice: '{default_voice}' -> {voice_file}")
     else:
         print(f">> [TTS Request] Found voice: '{request.voice}' -> {voice_file}")
     
@@ -1050,9 +1054,10 @@ def main():
     """Main entry point for running the API server"""
     import uvicorn
     
-    # Get port from environment variable, default to 9877
-    port = int(os.getenv("INDEXTTS_PORT", "9877"))
-    host = os.getenv("INDEXTTS_HOST", "0.0.0.0")
+    # Get server config from YAML or environment variables
+    server_config = get_server_config()
+    host = server_config["host"]
+    port = server_config["port"]
     
     uvicorn.run(
         "indextts_fastapi.api:app",
