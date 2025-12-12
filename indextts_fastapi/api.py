@@ -1089,8 +1089,10 @@ def main():
     host = server_config["host"]
     port = server_config["port"]
     
+    # Pass app object directly to avoid RuntimeWarning about sys.modules
+    # This prevents the "found in sys.modules after import" warning
     uvicorn.run(
-        "indextts_fastapi.api:app",
+        app,  # Pass app object directly instead of string
         host=host,
         port=port,
         reload=False,  # Set to True for development
