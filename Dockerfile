@@ -135,18 +135,23 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install runtime dependencies only (no build tools - custom CUDA kernels disabled)
+# Install runtime dependencies + minimal build tools for Triton/flash-attention compilation
+# Note: flash-attention uses Triton which compiles kernels at runtime, requiring gcc/g++
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
     python3-pip \
     curl \
     ca-certificates \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
-    # Verify python3 is available
-    python3 --version
+    # Verify python3 and compiler are available
+    python3 --version && \
+    gcc --version && \
+    g++ --version
 
 # Set working directory
 WORKDIR /app
