@@ -135,8 +135,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install runtime dependencies + minimal build tools for Triton/flash-attention compilation
-# Note: flash-attention uses Triton which compiles kernels at runtime, requiring gcc/g++ and Python headers
+# Install runtime dependencies + build tools for Triton/flash-attention/DeepSpeed
+# Note: flash-attention uses Triton which compiles kernels at runtime
+# DeepSpeed also builds CUDA ops JIT, requiring nvcc (CUDA toolkit)
+# ffmpeg needed for audio format conversion (MP3, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
@@ -147,13 +149,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     gcc \
     g++ \
+    ffmpeg \
+    # Install CUDA toolkit for DeepSpeed (nvcc for JIT compilation)
+    cuda-toolkit-12-8 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
-    # Verify python3, compiler, and Python headers are available
+    # Verify installations
     python3 --version && \
     gcc --version && \
     g++ --version && \
+    ffmpeg -version | head -1 && \
+    nvcc --version | head -1 && \
     python3 -c "import sysconfig; print('Python headers:', sysconfig.get_path('include'))"
 
 # Set working directory
