@@ -4,6 +4,15 @@ Provides HTTP endpoints for text-to-speech synthesis
 Includes OpenAI-compatible endpoints for easy integration
 """
 import os
+
+# Set TORCH_CUDA_ARCH_LIST early to prevent CUDA 12.8+ compilation errors
+# CUDA 12.8+ doesn't support compute_70 (Volta), so we exclude it
+# This must be set BEFORE importing torch or any CUDA-dependent modules
+if not os.getenv("TORCH_CUDA_ARCH_LIST"):
+    # Set to supported architectures: 7.5 (Turing), 8.0+ (Ampere and newer)
+    # Exclude 7.0 (Volta) which CUDA 12.8+ doesn't support
+    os.environ["TORCH_CUDA_ARCH_LIST"] = "7.5;8.0;8.6"
+
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
@@ -130,13 +139,9 @@ async def lifespan(app: FastAPI):
         print(f">> Config path: {os.path.abspath(cfg_path)}")
         print(f">> Model config: {model_config}")
         
-        # Set TORCH_CUDA_ARCH_LIST to avoid compilation errors with CUDA 12.8+
-        # CUDA 12.8+ doesn't support compute_70 (Volta), so we need to specify supported architectures
-        if torch.cuda.is_available() and not os.getenv("TORCH_CUDA_ARCH_LIST"):
-            # Detect GPU compute capabilities and set appropriate architectures
-            # RTX 3090 is Ampere (compute capability 8.6)
-            # CUDA 12.8 supports: 7.5 (Turing), 8.0+ (Ampere and newer)
-            # Exclude 7.0 (Volta) as it's not supported in CUDA 12.8+
+        # TORCH_CUDA_ARCH_LIST is set at module import time (see top of file)
+        # This ensures it's set before any CUDA kernel compilation happens
+        if torch.cuda.is_available():
             compute_caps = []
             for i in range(torch.cuda.device_count()):
                 props = torch.cuda.get_device_properties(i)
@@ -144,14 +149,9 @@ async def lifespan(app: FastAPI):
                 cap = f"{major}.{minor}"
                 if cap not in compute_caps:
                     compute_caps.append(cap)
-            
-            # Always include 8.0 and 8.6 for Ampere (RTX 3090)
-            # Also include 7.5 for Turing compatibility
-            arch_list = "7.5;8.0;8.6"
             if compute_caps:
                 print(f">> Detected GPU compute capabilities: {', '.join(compute_caps)}")
-            os.environ["TORCH_CUDA_ARCH_LIST"] = arch_list
-            print(f">> Set TORCH_CUDA_ARCH_LIST={arch_list} for CUDA kernel compilation (CUDA 12.8 compatible)")
+            print(f">> TORCH_CUDA_ARCH_LIST={os.getenv('TORCH_CUDA_ARCH_LIST', 'not set')} (set at module import)")
         
         try:
             tts_model = IndexTTS2(**model_config)
