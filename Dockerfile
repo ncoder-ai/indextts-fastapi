@@ -136,10 +136,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1
 
 # Install runtime dependencies + minimal build tools for Triton/flash-attention compilation
-# Note: flash-attention uses Triton which compiles kernels at runtime, requiring gcc/g++
+# Note: flash-attention uses Triton which compiles kernels at runtime, requiring gcc/g++ and Python headers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3.10 \
+    python3-dev \
+    python3.10-dev \
     python3-pip \
     curl \
     ca-certificates \
@@ -148,10 +150,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* && \
-    # Verify python3 and compiler are available
+    # Verify python3, compiler, and Python headers are available
     python3 --version && \
     gcc --version && \
-    g++ --version
+    g++ --version && \
+    python3 -c "import sysconfig; print('Python headers:', sysconfig.get_path('include'))"
 
 # Set working directory
 WORKDIR /app
@@ -216,9 +219,7 @@ RUN cd /app/wrapper && \
     uv pip install --python /app/.venv/bin/python -e . && \
     # Install DeepSpeed for optimization support
     echo ">> Installing DeepSpeed..." && \
-    uv pip install --python /app/.venv/bin/python deepspeed==0.17.1 || \
-    (echo ">> WARNING: DeepSpeed installation failed, continuing without it" && \
-     uv pip install --python /app/.venv/bin/python deepspeed || true) && \
+    uv pip install --python /app/.venv/bin/python deepspeed==0.17.1 && \
     # Verify installations
     /app/.venv/bin/python -c "import uvicorn; print('✓ uvicorn installed:', uvicorn.__version__)" && \
     /app/.venv/bin/python -c "import fastapi; print('✓ fastapi installed')" && \
