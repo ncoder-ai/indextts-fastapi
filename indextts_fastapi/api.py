@@ -4,15 +4,6 @@ Provides HTTP endpoints for text-to-speech synthesis
 Includes OpenAI-compatible endpoints for easy integration
 """
 import os
-
-# Set TORCH_CUDA_ARCH_LIST early to prevent CUDA 12.8+ compilation errors
-# CUDA 12.8+ doesn't support compute_70 (Volta), so we exclude it
-# This must be set BEFORE importing torch or any CUDA-dependent modules
-if not os.getenv("TORCH_CUDA_ARCH_LIST"):
-    # Set to supported architectures: 7.5 (Turing), 8.0+ (Ampere and newer)
-    # Exclude 7.0 (Volta) which CUDA 12.8+ doesn't support
-    os.environ["TORCH_CUDA_ARCH_LIST"] = "7.5;8.0;8.6"
-
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
@@ -130,12 +121,17 @@ async def lifespan(app: FastAPI):
         print(f">> Verifying checkpoint files in {model_dir}...")
         all_exist, missing = check_checkpoints_exist(model_dir)
         if not all_exist:
+            print(f">> ERROR: Missing required checkpoint files: {', '.join(missing)}")
+            print(f">> Model directory: {os.path.abspath(model_dir)}")
+            print(f">> Directory contents: {os.listdir(model_dir) if os.path.exists(model_dir) else 'Directory does not exist'}")
             raise FileNotFoundError(
                 f"Cannot load model: missing required files: {', '.join(missing)}. "
                 f"Model directory: {os.path.abspath(model_dir)}"
             )
+        print(f">> ✓ All checkpoint files verified")
         
         print(f">> Loading IndexTTS2 model from {model_dir}...")
+        print(f">> This may take a few minutes...")
         print(f">> Config path: {os.path.abspath(cfg_path)}")
         print(f">> Model config: {model_config}")
         
@@ -1090,6 +1086,11 @@ async def list_voices_native():
 def main():
     """Main entry point for running the API server"""
     import uvicorn
+    
+    # Ensure TORCH_CUDA_ARCH_LIST is set (should already be set in __init__.py, but set here as fallback)
+    if not os.getenv("TORCH_CUDA_ARCH_LIST"):
+        os.environ["TORCH_CUDA_ARCH_LIST"] = "7.5;8.0;8.6"
+        print(f">> Set TORCH_CUDA_ARCH_LIST={os.environ['TORCH_CUDA_ARCH_LIST']} in main()")
     
     # Get server config from YAML or environment variables
     server_config = get_server_config()
