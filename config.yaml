@@ -23,3 +23,16 @@ voice:
 server:
   host: "0.0.0.0"
   port: 9877
+
+generation:
+  # Generation parameters for TTS synthesis
+  max_text_tokens_per_segment: 120    # Max tokens per text segment
+  max_mel_tokens: 3000                 # Maximum mel tokens (increased from 1500 to handle longer texts)
+  do_sample: true                     # Enable sampling
+  top_p: 0.8                          # Top-p sampling parameter
+  top_k: 30                           # Top-k sampling parameter
+  temperature: 0.8                    # Sampling temperature
+  num_beams: 3                        # Number of beams for beam search
+  repetition_penalty: 10.0            # Repetition penalty
+  length_penalty: 0.0                  # Length penalty
+  interval_silence: 200               # Silence interval between segments (ms)

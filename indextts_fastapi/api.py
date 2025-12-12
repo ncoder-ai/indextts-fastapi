@@ -21,6 +21,7 @@ from .config import (
     get_auto_download_config,
     get_voice_config,
     get_server_config,
+    get_generation_config,
     get_default_voice,
     OPENAI_VOICE_MAP,
     AUDIO_EXTENSIONS,
@@ -883,7 +884,10 @@ async def openai_audio_speech(request: OpenAITTSRequest):
         output_filename = f"tts_{uuid.uuid4()}.wav"
         output_path = os.path.join(temp_dir, output_filename)
         
-        # Call TTS model with default settings optimized for OpenAI compatibility
+        # Get generation config from YAML or defaults
+        gen_config = get_generation_config()
+        
+        # Call TTS model with configurable settings optimized for OpenAI compatibility
         result = tts_model.infer(
             spk_audio_prompt=voice_file,
             text=request.input.strip(),
@@ -894,17 +898,17 @@ async def openai_audio_speech(request: OpenAITTSRequest):
             use_emo_text=False,
             emo_text=None,
             use_random=False,
-            interval_silence=200,
+            interval_silence=gen_config["interval_silence"],
             verbose=False,
-            max_text_tokens_per_segment=120,
-            do_sample=True,
-            top_p=0.8,
-            top_k=30,
-            temperature=0.8,
-            num_beams=3,
-            repetition_penalty=10.0,
-            length_penalty=0.0,
-            max_mel_tokens=1500,
+            max_text_tokens_per_segment=gen_config["max_text_tokens_per_segment"],
+            do_sample=gen_config["do_sample"],
+            top_p=gen_config["top_p"],
+            top_k=gen_config["top_k"],
+            temperature=gen_config["temperature"],
+            num_beams=gen_config["num_beams"],
+            repetition_penalty=gen_config["repetition_penalty"],
+            length_penalty=gen_config["length_penalty"],
+            max_mel_tokens=gen_config["max_mel_tokens"],
         )
         
         if result is None or not os.path.exists(output_path):

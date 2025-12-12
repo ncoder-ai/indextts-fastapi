@@ -46,6 +46,18 @@ def get_default_config() -> Dict:
             "host": "0.0.0.0",
             "port": 9877,
         },
+        "generation": {
+            "max_text_tokens_per_segment": 120,
+            "max_mel_tokens": 3000,  # Increased from 1500 to handle longer texts
+            "do_sample": True,
+            "top_p": 0.8,
+            "top_k": 30,
+            "temperature": 0.8,
+            "num_beams": 3,
+            "repetition_penalty": 10.0,
+            "length_penalty": 0.0,
+            "interval_silence": 200,
+        },
     }
 
 
@@ -241,6 +253,40 @@ def get_server_config() -> Dict:
     return {
         "host": os.getenv("INDEXTTS_HOST", server_config.get("host", "0.0.0.0")),
         "port": int(os.getenv("INDEXTTS_PORT", str(server_config.get("port", 9877)))),
+    }
+
+
+def get_generation_config() -> Dict:
+    """
+    Get generation configuration from config.yaml, with environment variable overrides.
+    
+    Environment variables override YAML values (prefixed with INDEXTTS_GEN_):
+    - INDEXTTS_GEN_MAX_TEXT_TOKENS_PER_SEGMENT
+    - INDEXTTS_GEN_MAX_MEL_TOKENS
+    - INDEXTTS_GEN_DO_SAMPLE
+    - INDEXTTS_GEN_TOP_P
+    - INDEXTTS_GEN_TOP_K
+    - INDEXTTS_GEN_TEMPERATURE
+    - INDEXTTS_GEN_NUM_BEAMS
+    - INDEXTTS_GEN_REPETITION_PENALTY
+    - INDEXTTS_GEN_LENGTH_PENALTY
+    - INDEXTTS_GEN_INTERVAL_SILENCE
+    """
+    config = load_config()
+    gen_config = config.get("generation", {})
+    
+    # Environment variables override YAML values
+    return {
+        "max_text_tokens_per_segment": int(os.getenv("INDEXTTS_GEN_MAX_TEXT_TOKENS_PER_SEGMENT", str(gen_config.get("max_text_tokens_per_segment", 120)))),
+        "max_mel_tokens": int(os.getenv("INDEXTTS_GEN_MAX_MEL_TOKENS", str(gen_config.get("max_mel_tokens", 3000)))),
+        "do_sample": os.getenv("INDEXTTS_GEN_DO_SAMPLE", str(gen_config.get("do_sample", True))).lower() == "true",
+        "top_p": float(os.getenv("INDEXTTS_GEN_TOP_P", str(gen_config.get("top_p", 0.8)))),
+        "top_k": int(os.getenv("INDEXTTS_GEN_TOP_K", str(gen_config.get("top_k", 30)))),
+        "temperature": float(os.getenv("INDEXTTS_GEN_TEMPERATURE", str(gen_config.get("temperature", 0.8)))),
+        "num_beams": int(os.getenv("INDEXTTS_GEN_NUM_BEAMS", str(gen_config.get("num_beams", 3)))),
+        "repetition_penalty": float(os.getenv("INDEXTTS_GEN_REPETITION_PENALTY", str(gen_config.get("repetition_penalty", 10.0)))),
+        "length_penalty": float(os.getenv("INDEXTTS_GEN_LENGTH_PENALTY", str(gen_config.get("length_penalty", 0.0)))),
+        "interval_silence": int(os.getenv("INDEXTTS_GEN_INTERVAL_SILENCE", str(gen_config.get("interval_silence", 200)))),
     }
 
 
